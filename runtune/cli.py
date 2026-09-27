@@ -1,4 +1,4 @@
-"""runtune — agents should get better from their runs.
+"""runtune — a runtime learning loop for coding agents. It tunes the harness, not the model.
 
     runtune scan      what the evidence covers, per source, and where it has holes
     runtune derive    runs -> proposed constraints, capabilities, subagents, routes

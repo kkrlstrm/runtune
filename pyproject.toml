@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "runtune"
 version = "0.2.0"
-description = "Agents should get better from their runs: Claude Code, Codex and OpenRouter telemetry -> reviewed capabilities and constraints, measured and retired."
+description = "A runtime learning loop for coding agents: turns Claude Code, Codex and model-router runs into governed, measured changes to the agent harness. It tunes the harness, not the model."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [{ name = "Kai Karlstrom" }]
-keywords = ["claude-code", "codex", "openrouter", "ai-agents", "agent-telemetry", "guardrails", "skills", "llmops"]
+keywords = ["runtime-learning", "agent-harness", "claude-code", "codex", "openrouter", "ai-agents", "agent-telemetry", "guardrails", "skills", "llmops"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
