@@ -1,10 +1,10 @@
 """Analyze a round: python3 analyze.py results-round2.jsonl
 
-The unit is the RUN, and the outcome is which way the agent reached `ttt`:
+The unit is the RUN, and the outcome is which way the agent reached the library:
   cli      only CLI calls
   inline   only inline programs
   both     both (the nudge's target case: inline first, then did it switch?)
-  none     never touched ttt (answered another way)
+  none     never touched the library (answered another way)
 
 Arms B and C differ only after an inline call fires the nudge, so the skill's
 effect is A vs B+C on first choice, and the nudge's effect is read only from C
@@ -33,7 +33,7 @@ def fisher_two_sided(a, b, c, d) -> float:
 
 
 def outcome(r) -> str:
-    i, c = r["inline_ttt"], r["cli_ttt"]
+    i, c = r["inline_lib"], r["cli_lib"]
     return "both" if i and c else "inline" if i else "cli" if c else "none"
 
 
@@ -51,15 +51,15 @@ def main(path: str) -> None:
     a_cli, a_inl = used("A")
     bc_cli = used("B")[0] + used("C")[0]
     bc_inl = used("B")[1] + used("C")[1]
-    print(f"\nskill present (B+C) vs absent (A), among runs that reached ttt:")
+    print(f"\nskill present (B+C) vs absent (A), among runs that reached the library:")
     print(f"  CLI share  A {a_cli}/{a_cli + a_inl}   B+C {bc_cli}/{bc_cli + bc_inl}   "
           f"Fisher p = {fisher_two_sided(a_cli, a_inl, bc_cli, bc_inl):.3f}")
     for arm in "BC":
         c, i = used(arm)
         print(f"  arm {arm} alone: CLI {c}/{c + i}   vs A  p = {fisher_two_sided(a_cli, a_inl, c, i):.3f}")
-    nudged = [r for r in rows if r["arm"] == "C" and r["inline_ttt"]]
+    nudged = [r for r in rows if r["arm"] == "C" and r["inline_lib"]]
     print(f"\nnudge: C runs with an inline call = {len(nudged)}; of those, later CLI call in the same run = "
-          f"{sum(1 for r in nudged if r['cli_ttt'])}")
+          f"{sum(1 for r in nudged if r['cli_lib'])}")
     by_task = defaultdict(lambda: defaultdict(Counter))
     for r in rows:
         by_task[r["task"]][r["arm"]][outcome(r)] += 1

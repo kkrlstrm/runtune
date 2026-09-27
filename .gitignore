@@ -9,3 +9,5 @@ dist/
 local/
 experiments/**/*.log
 experiments/**/tasks.local.json
+experiments/**/skill.local/
+experiments/**/nudge.rules.local.json

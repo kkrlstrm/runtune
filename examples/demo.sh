@@ -6,7 +6,7 @@ HERE="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 cd "$TMP"
 rt() { PYTHONPATH="$HERE" python3 -m runtune "$@"; }
-J=(--jsonl "$HERE/examples/demo.jsonl")
+J=(--jsonl "$HERE/runtune/data/demo.jsonl")
 
 echo "== scan";   rt scan "${J[@]}"
 echo "== derive"; rt derive "${J[@]}" --out report.md

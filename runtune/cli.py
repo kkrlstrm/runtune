@@ -16,8 +16,9 @@
     runtune inbox     poll remote channels (Slack, email, plugins) for a reply and act on it
     runtune channels  list / add / remove / test notification channels
     runtune schedule  print or --install the weekly digest + hourly inbox (launchd / cron)
-    runtune record    codex (rollout files) | openrouter (daily bill)
+    runtune record    claude | codex (backfill from local transcripts) | openrouter (daily bill)
     runtune install   print the hook wiring for Claude Code and Codex
+    runtune demo      the whole loop on a synthetic trace, in a temp dir
     runtune ledger    verify the hash chain
 """
 
@@ -218,7 +219,10 @@ def cmd_agents(a):
 
 
 def cmd_record(a):
-    if a.what == "codex":
+    if a.what == "claude":
+        from .record import claude
+        print(json.dumps(claude.ingest(a.root or "~/.claude/projects")))
+    elif a.what == "codex":
         from .record import codex
         print(json.dumps(codex.ingest(a.root or "~/.codex/sessions")))
     elif a.what == "openrouter":
@@ -426,6 +430,43 @@ def cmd_schedule(a):
     return 0
 
 
+def cmd_demo(a):
+    """The whole loop on a synthetic trace, in a temp directory: nothing to set up, nothing kept."""
+    import shutil
+    import tempfile
+    data = os.path.join(os.path.dirname(__file__), "data", "demo.jsonl")
+    tmp = tempfile.mkdtemp(prefix="runtune-demo-")
+    ws = os.path.join(tmp, ".runtune")
+    os.environ["RUNTUNE_NO_DESKTOP"] = "1"
+    common = ["--jsonl", data, "--workspace", ws]
+    step = lambda title: print(f"\n\033[1m== {title}\033[0m")  # noqa: E731
+    try:
+        step("scan: what the evidence covers")
+        main(["scan", *common])
+        step("notify: one digest (the local channel)")
+        main(["notify", *common, "--target-root", tmp, "--print"])
+        from .notify import digest as _d
+        st = _d.awaiting(Workspace(ws))[-1]
+        pick = [str(i["n"]) for i in st["items"] if i["kind"] in ("constraint", "capability")][:2]
+        step("reply 'all but number three' — refused, never guessed")
+        main(["reply", "all", "but", "number", "three", "--workspace", ws, "--approver", "demo", "--target-root", tmp])
+        step(f"reply {','.join(pick)} — approve the constraint and the capability, decline the rest")
+        main(["reply", ",".join(pick), "--workspace", ws, "--approver", "demo", "--target-root", tmp])
+        step("what was written")
+        for base, _, files in os.walk(tmp):
+            for fn in files:
+                p = os.path.join(base, fn)
+                if "/.runtune" not in p:
+                    print("  " + os.path.relpath(p, tmp))
+        step("ledger")
+        main(["ledger", "--workspace", ws])
+        print(f"\nNext: `runtune record claude` (and/or `runtune record codex`) to load your own history, "
+              f"then `runtune notify`.")
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return 0
+
+
 def cmd_ledger(a):
     ok, msg = ledger.verify(Workspace(a.workspace).ledger_path)
     print(msg)
@@ -477,8 +518,8 @@ def main(argv=None) -> int:
     p.add_argument("--approve", required=True)
     p.add_argument("--reason", required=True)
     p = sub.add_parser("record", help="run a recorder: codex (rollout files) or openrouter (daily bill)")
-    p.add_argument("what", choices=["codex", "openrouter"])
-    p.add_argument("--root", help="Codex sessions dir (default ~/.codex/sessions)")
+    p.add_argument("what", choices=["claude", "codex", "openrouter"])
+    p.add_argument("--root", help="transcript dir (default ~/.claude/projects or ~/.codex/sessions)")
     sub.add_parser("install", help="print the hook wiring for Claude Code and Codex")
     p = sub.add_parser("notify", help="derive + review, then send ONE digest to every configured channel")
     _common(p)
@@ -515,6 +556,7 @@ def main(argv=None) -> int:
     p.add_argument("--target-root", default=".")
     p.add_argument("--install", action="store_true")
     p.add_argument("extra", nargs="*", help="extra args for the weekly notify (after --)")
+    sub.add_parser("demo", help="run the whole loop on a synthetic trace in a temp dir")
     p = sub.add_parser("ledger")
     p.add_argument("--workspace", default=".runtune")
     a = ap.parse_args(argv)

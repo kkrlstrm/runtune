@@ -8,7 +8,7 @@
 # Build context: the runtune repo root.  fly deploy --ha=false --config deploy/fly/fly.toml
 FROM python:3.12-slim
 
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=Europe/Berlin \
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 TZ=UTC \
     RUNTUNE_HOME=/data/runtune PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 ARG SUPERCRONIC_URL=https://github.com/aptible/supercronic/releases/download/v0.2.33/supercronic-linux-amd64

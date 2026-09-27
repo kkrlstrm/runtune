@@ -163,7 +163,7 @@ _local_cache: dict[str, bool] = {}
 def is_local_module(root: str) -> bool:
     """True when `root` is the codebase's own code, not the standard library or an
     installed package. Decided by asking this interpreter whether it can import the
-    name WITHOUT the sys.path edits the snippets make: `ttt` (reached through
+    name WITHOUT the sys.path edits the snippets make: `toolkit` (reached through
     sys.path.insert) is local, `pypdf` (in site-packages) is not. So the answer is
     about the machine RunTune runs on — run it where the agents run, or list the
     roots in $RUNTUNE_LOCAL_ROOTS (comma-separated) to state it."""
@@ -191,8 +191,8 @@ def is_inline_program(command: str | None) -> bool:
 def inline_target(command: str | None) -> str | None:
     """What local code an inline program exists to reach, or None.
 
-    `from ttt import db, clickup` -> "ttt:clickup,db". The submodule list is kept
-    because `ttt:db` and `ttt:gitlab` are different jobs that would get different
+    `from toolkit import db, crm` -> "toolkit:crm,db". The submodule list is kept
+    because `toolkit:db` and `toolkit:gitlab` are different jobs that would get different
     CLIs. A snippet that imports only the standard library returns None: it is
     ad-hoc scripting, not a missing capability, and folding it in would make the
     largest cluster "people write Python".

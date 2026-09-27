@@ -8,7 +8,7 @@ primary_region = "iad"
   dockerfile = "Dockerfile"
 
 [env]
-  TZ = "Europe/Berlin"
+  TZ = "UTC"
   RUNTUNE_HOME = "/data/runtune"
 
 # Workspace (.runtune: candidates, artifacts, digests, ledger) + the target-repo clone.

@@ -55,8 +55,8 @@ def surface_family(ev) -> str:
 
 
 def candidate_pattern(shape: str) -> str | None:
-    """The shape keys on basenames (`python3 page-digest.py`), but agents type paths
-    (`python3 scripts/page-digest.py`), so every token may carry a directory prefix.
+    """The shape keys on basenames (`python3 fetch-page.py`), but agents type paths
+    (`python3 scripts/fetch-page.py`), so every token may carry a directory prefix.
     The first version required adjacent tokens and matched none of its own failures."""
     toks = [t for t in shape.split(" ") if t]
     if not toks:

@@ -8,12 +8,12 @@ scratch each time.
 
 Two derivations, both deterministic:
 
-  INLINE PROGRAMS. An agent that writes `python3 -c "from ttt import db; …"` is
+  INLINE PROGRAMS. An agent that writes `python3 -c "from toolkit import db; …"` is
   writing a program to call a library that has no command-line entry point. The
   snippet works; the cost is that it is authored again every time, and averages
   hundreds of characters where a CLI call is a line. Snippets are clustered by
   WHAT LOCAL CODE THEY REACH (evidence.shapes.inline_target), not by their text,
-  and the attribute calls inside them (`db.query_master(`, `clickup.tasks_for(`)
+  and the attribute calls inside them (`db.query_master(`, `crm.accounts_for(`)
   are ranked into a proposed verb list with its coverage curve. If a CLI for that
   library already exists in the log, the candidate is an ADOPTION gap instead:
   the capability exists and agents are not using it.
@@ -49,7 +49,7 @@ def _weeks(events) -> int:
 
 
 def _cli_names(e) -> set[str]:
-    """Names a shell call could be invoking a CLI by: `ttt`, `ttt.py`, `python3 ttt.py`."""
+    """Names a shell call could be invoking a CLI by: `toolkit`, `toolkit.py`, `python3 toolkit.py`."""
     if not e.shape or e.inline_target:
         return set()
     return {t[:-3] if t.endswith(".py") else t for t in e.shape.split(" ")}
@@ -148,7 +148,7 @@ def _coverage_curve(verbs: Counter) -> dict:
 
 
 def _observed_invocations(root: str, cli_events) -> list:
-    """The CLI's subcommands as agents actually typed them — `ttt db master`, `ttt clickup tasks`.
+    """The CLI's subcommands as agents actually typed them — `toolkit db master`, `toolkit crm tasks`.
     Only syntax that appeared in a SUCCESSFUL call is ever put in front of an agent."""
     seen = Counter()
     for e in cli_events:
@@ -160,7 +160,7 @@ def _observed_invocations(root: str, cli_events) -> list:
             if base in (root, f"{root}.py"):
                 sub = [x for x in toks[i + 1:i + 3] if re.match(r"^[a-z][a-z0-9_-]*$", x)]
                 if sub:
-                    # keep the command exactly as typed (`scripts/ttt`, not `ttt`): a path
+                    # keep the command exactly as typed (`scripts/toolkit`, not `toolkit`): a path
                     # the agent drops is a "command not found" the skill caused
                     head = " ".join(toks[max(0, i - 1):i + 1]) if base.endswith(".py") and i else t
                     seen[" ".join([head] + sub)] += 1

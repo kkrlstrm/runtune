@@ -113,6 +113,8 @@ class Corpus:
     coverage: dict = field(default_factory=dict)
     route_policy: dict | None = None        # parsed allowlist (routes.json shape)
     spend: list = field(default_factory=list)  # OpenRouter daily activity rows
+    # source -> the only tools that recorder captures (absent = it sees everything)
+    capture_allowlist: dict = field(default_factory=dict)
 
     def extend(self, other: "Corpus") -> "Corpus":
         self.events.extend(other.events)
@@ -121,6 +123,7 @@ class Corpus:
         if other.route_policy is not None:
             self.route_policy = other.route_policy
         self.spend.extend(other.spend)
+        self.capture_allowlist.update(other.capture_allowlist)
         return self
 
     def by(self, key) -> dict:

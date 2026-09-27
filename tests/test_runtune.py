@@ -19,17 +19,17 @@ class Shapes(unittest.TestCase):
         self.assertEqual(shapes.first_tokens("# note\ncd /x && python3 scripts/a.py --b"), ["python3", "a.py"])
         self.assertEqual(shapes.first_tokens('cd "/a b" && git push'), ["git", "push"])
         self.assertEqual(shapes.first_tokens("X=$(grep foo .env) && echo"), ["grep"])
-        self.assertEqual(shapes.first_tokens("python3 <<'EOF'\nimport ttt"), ["python3", "<<"])
+        self.assertEqual(shapes.first_tokens("python3 <<'EOF'\nimport toolkit"), ["python3", "<<"])
 
     def test_inline_target_names_local_code_only(self):
-        self.assertEqual(shapes.inline_target('python3 -c "from ttt import db, clickup; db.x()"'), "ttt:clickup,db")
+        self.assertEqual(shapes.inline_target('python3 -c "from toolkit import db, crm; db.x()"'), "toolkit:crm,db")
         self.assertIsNone(shapes.inline_target('python3 -c "import json, sys"'))
         # a quote directly before `from` used to drop the from-clause and mis-key the import
-        self.assertEqual(shapes.inline_target("python3 -c \"from ttt import client\""), "ttt:client")
+        self.assertEqual(shapes.inline_target("python3 -c \"from toolkit import client\""), "toolkit:client")
 
     def test_error_normalization_collapses_urls(self):
-        a = shapes.normalize_error("exit 1 [page-digest] https://a.gov/x?id=9 -> tier=dead")
-        b = shapes.normalize_error("exit 1 [page-digest] https://b.org/y?did=2 -> tier=dead")
+        a = shapes.normalize_error("exit 1 [fetch-page] https://a.gov/x?id=9 -> tier=dead")
+        b = shapes.normalize_error("exit 1 [fetch-page] https://b.org/y?did=2 -> tier=dead")
         self.assertEqual(a, b)
 
 
@@ -62,10 +62,10 @@ class Constraints(unittest.TestCase):
         self.assertEqual(c.proposal["ruleset_rule"]["action"], "monitor")
 
     def test_pattern_matches_path_prefixed_scripts(self):
-        rx = re.compile(constraints.candidate_pattern("python3 page-digest.py"))
-        self.assertTrue(rx.search("python3 scripts/page-digest.py https://x --entity y"))
-        self.assertTrue(rx.search("cd /a && python3 /abs/scripts/page-digest.py u"))
-        self.assertFalse(rx.search("python3 scripts/page-digest.pyc"))
+        rx = re.compile(constraints.candidate_pattern("python3 fetch-page.py"))
+        self.assertTrue(rx.search("python3 scripts/fetch-page.py https://x --entity y"))
+        self.assertTrue(rx.search("cd /a && python3 /abs/scripts/fetch-page.py u"))
+        self.assertFalse(rx.search("python3 scripts/fetch-page.pyc"))
 
     def test_single_session_retry_loop_is_withheld_with_reason(self):
         got, held = constraints.derive(fx.failing_psql())
@@ -89,7 +89,7 @@ class Capabilities(unittest.TestCase):
         self.assertIn("db.query_master", dict(c.numbers["verbs_top"]))
         self.assertEqual([r[0] for r in c.ladder if r[1]], ["skill"])
         # the skill names only syntax observed succeeding, never syntax derived from function names
-        self.assertIn("`scripts/ttt db master …`", c.proposal["skill_md"])
+        self.assertIn("`scripts/toolkit db master …`", c.proposal["skill_md"])
         self.assertNotIn("query-master", c.proposal["skill_md"])
 
     def test_without_cli_proposes_new_capability(self):
@@ -107,10 +107,12 @@ class Subagents(unittest.TestCase):
 
     def test_overgrant_ignores_tools_the_recorder_cannot_see(self):
         with tempfile.TemporaryDirectory() as d:
-            with open(os.path.join(d, "db-reader.md"), "w") as f:
-                f.write("---\nname: db-reader\ntools: Bash, Read, Grep\n---\nReturn status ok or failed.\n")
-            got, _ = subagents.derive(fx.fanouts(), agents_dir=d)
-            og = [x for x in got if x.key == "overgrant|db-reader"][0]
+            with open(os.path.join(d, "sql-reader.md"), "w") as f:
+                f.write("---\nname: sql-reader\ntools: Bash, Read, Grep\n---\nReturn status ok or failed.\n")
+            corpus = fx.fanouts()
+            corpus.capture_allowlist = {"claude": {"Bash", "Read"}}   # a recorder that cannot see Grep
+            got, _ = subagents.derive(corpus, agents_dir=d)
+            og = [x for x in got if x.key == "overgrant|sql-reader"][0]
             self.assertEqual(og.proposal["grant"], ["Bash", "Grep"])   # Read unused; Grep unobservable, kept
 
 
@@ -186,8 +188,8 @@ class Measure(unittest.TestCase):
         self.assertEqual(r["after"]["target"]["attempts"], 10)
 
     def test_adoption_share(self):
-        ad = measure.adoption(fx.inline_ttt(), lambda e: (e.inline_target or "").startswith("ttt"),
-                              lambda e: e.shape == "ttt", at=fx.T0 + timedelta(days=20))
+        ad = measure.adoption(fx.inline_ttt(), lambda e: (e.inline_target or "").startswith("toolkit"),
+                              lambda e: e.shape == "toolkit", at=fx.T0 + timedelta(days=20))
         self.assertEqual(ad["new_since"], 15)
         self.assertEqual(ad["old_since"], 20)
 
@@ -220,8 +222,8 @@ class Governance(unittest.TestCase):
     def test_ceiling_enforced(self):
         promoter.stage(self.ws, self.psql, self.root)
         with self.assertRaises(promoter.Refused):
-            promoter.apply(self.ws, self.psql, "kai", action="block")
-        art = promoter.apply(self.ws, self.psql, "kai", action="deny")
+            promoter.apply(self.ws, self.psql, "alice", action="block")
+        art = promoter.apply(self.ws, self.psql, "alice", action="deny")
         rules = json.load(open(art["target"]))["rules"]
         self.assertEqual(rules[0]["action"], "deny")
 
@@ -238,7 +240,7 @@ class Governance(unittest.TestCase):
         with open(target, "w") as f:
             json.dump({"rules": [{"id": "someone-else"}]}, f)
         with self.assertRaises(promoter.Refused):
-            promoter.apply(self.ws, self.psql, "kai")
+            promoter.apply(self.ws, self.psql, "alice")
 
     def test_skill_never_overwrites_human_written(self):
         promoter.stage(self.ws, self.cap, self.root)
@@ -253,7 +255,7 @@ class Governance(unittest.TestCase):
         art["base_digest"] = file_digest(target)
         self.ws.put(art)
         with self.assertRaises(promoter.Refused) as cm:
-            promoter.apply(self.ws, self.cap, "kai")
+            promoter.apply(self.ws, self.cap, "alice")
         self.assertIn("not created by RunTune", str(cm.exception))
         self.assertEqual(open(os.path.join(target, "SKILL.md")).read(), "hand-written")
 
@@ -263,7 +265,7 @@ class Governance(unittest.TestCase):
         os.makedirs(target)
         open(os.path.join(target, "SKILL.md"), "w").write("appeared after staging")
         with self.assertRaises(promoter.Refused) as cm:
-            promoter.apply(self.ws, self.cap, "kai")
+            promoter.apply(self.ws, self.cap, "alice")
         self.assertIn("changed since", str(cm.exception))
 
     def test_widening_route_needs_reason_and_eval(self):
@@ -272,12 +274,12 @@ class Governance(unittest.TestCase):
             json.dump({"modes": {"extract": {"model": "deepseek/v4-flash"}}}, f)
         promoter.stage(self.ws, self.challenger, self.root)
         with self.assertRaises(promoter.Refused):
-            promoter.apply(self.ws, self.challenger, "kai")                       # no reason
+            promoter.apply(self.ws, self.challenger, "alice")                       # no reason
         with self.assertRaises(promoter.Refused):
-            promoter.apply(self.ws, self.challenger, "kai", reason="cheaper")     # no eval
+            promoter.apply(self.ws, self.challenger, "alice", reason="cheaper")     # no eval
         ev = os.path.join(self.root, "eval.json")
         open(ev, "w").write("{}")
-        promoter.apply(self.ws, self.challenger, "kai", reason="cheaper", eval_ref=ev)
+        promoter.apply(self.ws, self.challenger, "alice", reason="cheaper", eval_ref=ev)
         self.assertEqual(json.load(open(routes_path))["modes"]["extract"]["model"], "qwen/cheap")
         events = ledger.read(self.ws.ledger_path)
         self.assertTrue(any(e.get("boundary_change") for e in events if e["action"] == "apply"))
@@ -288,7 +290,7 @@ class Governance(unittest.TestCase):
         json.dump(auth, open(os.path.join(self.ws.root, "authority.json"), "w"))
         promoter.stage(self.ws, self.psql, self.root)
         with self.assertRaises(promoter.Refused):
-            promoter.apply(self.ws, self.psql, "kai")
+            promoter.apply(self.ws, self.psql, "alice")
 
     def test_revision_can_only_narrow_a_grant(self):
         path = os.path.join(self.root, "agent.md")
@@ -300,17 +302,17 @@ class Governance(unittest.TestCase):
 
     def test_retire_constraint_is_a_boundary_change(self):
         promoter.stage(self.ws, self.psql, self.root)
-        promoter.apply(self.ws, self.psql, "kai")
+        promoter.apply(self.ws, self.psql, "alice")
         with self.assertRaises(promoter.Refused):
-            promoter.retire(self.ws, self.psql, "kai", reason="")
-        promoter.retire(self.ws, self.psql, "kai", reason="workflow fixed")
+            promoter.retire(self.ws, self.psql, "alice", reason="")
+        promoter.retire(self.ws, self.psql, "alice", reason="workflow fixed")
         last = ledger.read(self.ws.ledger_path)[-1]
         self.assertTrue(last["boundary_change"])
         self.assertEqual(ledger.verify(self.ws.ledger_path)[0], True)
 
     def test_revision_inherits_cases(self):
         promoter.stage(self.ws, self.psql, self.root)
-        promoter.apply(self.ws, self.psql, "kai")
+        promoter.apply(self.ws, self.psql, "alice")
         run = self.ws.latest_run()
         c2 = dict(run["candidates"][0])
         c2["id"] = "con-psql-v2"
@@ -336,7 +338,10 @@ class LedgerAndRedaction(unittest.TestCase):
             self.assertFalse(ledger.verify(p)[0])
 
     def test_redacts_dsns_and_tokens(self):
-        s = redact.redact("psql postgresql://u:p@host/db glpat-abcdefghijklmnopqrst OPENROUTER_API_KEY=sk-or-v1-abcdef123456789012")
+        # fake credentials, assembled at runtime so secret scanners don't flag the source
+        fake_gitlab = "glpat-" + "abcdefghijklmnopqrst"
+        fake_or = "sk-or-v1-" + "abcdef123456789012"
+        s = redact.redact(f"psql postgresql://u:p@host/db {fake_gitlab} OPENROUTER_API_KEY={fake_or}")
         self.assertNotIn("u:p@host", s)
         self.assertNotIn("abcdefghijklmnop", s)
         self.assertNotIn("abcdef1234567890", s)
@@ -376,7 +381,7 @@ class Notify(unittest.TestCase):
             psql = next(i["n"] for i in items if i["kind"] == "constraint")
             widen = next(i["n"] for i in items if i["direction"] == "widen")
             state = {"digest_id": "d1", "items": items, "status": "awaiting_reply"}
-            res = digest.act(ws, state, f"{psql}, {widen}", "kai", root)
+            res = digest.act(ws, state, f"{psql}, {widen}", "alice", root)
             self.assertEqual(res["applied"], [psql])
             self.assertEqual([n for n, _ in res["refused"]], [widen])
             self.assertTrue(os.path.exists(os.path.join(root, "rules", "runtune.rules.json")))
@@ -406,7 +411,7 @@ class Notify(unittest.TestCase):
             run = {"run_id": "r1", "candidates": [c.to_dict() for c in got], "withheld": []}
             ws.save_run(run)
             d = digest.compose(ws, run, [])
-            res = digest.act(ws, {"digest_id": "d1", "items": d["items"]}, "all but number one", "kai", root)
+            res = digest.act(ws, {"digest_id": "d1", "items": d["items"]}, "all but number one", "alice", root)
             self.assertEqual(res["status"], "ambiguous")
             self.assertEqual(ws.artifacts(), [])
 
@@ -485,8 +490,8 @@ class Channels(unittest.TestCase):
             self.assertEqual([d["type"] for d in st["deliveries"]], ["local"])
             self.assertTrue(os.path.exists(os.path.join(ws.root, "inbox", "latest.md")))
             rec = st["deliveries"][0]
-            self.assertEqual(notify.handle(ws, st, rec, "the first one", "kai", root)["status"], "ambiguous")
-            res = notify.handle(ws, st, rec, "1", "kai", root)
+            self.assertEqual(notify.handle(ws, st, rec, "the first one", "alice", root)["status"], "ambiguous")
+            res = notify.handle(ws, st, rec, "1", "alice", root)
             self.assertEqual(res["applied"], [1])
             self.assertEqual(st["status"], "executed")
 
@@ -518,6 +523,37 @@ class Channels(unittest.TestCase):
             self.assertEqual(ok, {"plugin": True, "slack": False})   # slack has no token; plugin still delivered
             self.assertEqual(st["status"], "awaiting_reply")
             (rec, text), = notify.poll(ws, st)
-            res = notify.handle(ws, st, rec, text, "kai", root)
+            res = notify.handle(ws, st, rec, text, "alice", root)
             self.assertEqual(res["applied"], [])
             self.assertTrue(any(s.startswith("answer:Declined") for s in sent))
+
+
+class ClaudeBackfill(unittest.TestCase):
+    def test_transcript_parse_with_subagent_tokens(self):
+        from runtune.record import claude
+        with tempfile.TemporaryDirectory() as d:
+            sub = os.path.join(d, "s1", "subagents")
+            os.makedirs(sub)
+            lines = [
+                {"type": "assistant", "sessionId": "s1", "agentId": "a1", "timestamp": "2026-09-01T10:00:00Z",
+                 "message": {"model": "claude-x", "usage": {"output_tokens": 10, "cache_read_input_tokens": 900},
+                             "content": [{"type": "tool_use", "id": "t1", "name": "Bash",
+                                          "input": {"command": "psql -c x postgresql://u:p@h/db"}},
+                                         {"type": "tool_use", "id": "t2", "name": "Read", "input": {"file_path": "/a"}}]}},
+                {"type": "user", "sessionId": "s1", "agentId": "a1", "timestamp": "2026-09-01T10:00:01Z",
+                 "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "is_error": True,
+                                          "content": "connection refused"}]}},
+            ]
+            p = os.path.join(sub, "agent-a1.jsonl")
+            with open(p, "w") as f:
+                f.write("\n".join(json.dumps(x) for x in lines))
+            with open(os.path.join(sub, "agent-a1.meta.json"), "w") as f:
+                json.dump({"agentType": "web-researcher"}, f)
+            out = claude.parse(p)
+            evs = [o for o in out if o["type"] == "event"]
+            inv = [o for o in out if o["type"] == "invocation"][0]
+            self.assertEqual(len(evs), 1)                       # t2 has no result: unsettled, skipped
+            self.assertFalse(evs[0]["ok"])
+            self.assertEqual(evs[0]["actor"], "web-researcher")
+            self.assertNotIn("u:p@h", evs[0]["text"])
+            self.assertEqual((inv["tokens_out"], inv["tokens_reread"]), (10, 900))

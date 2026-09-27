@@ -2,18 +2,48 @@
 
 **Agents should get better from their runs.**
 
-RunTune turns real agent execution into better future behavior. Successful patterns become
-reusable capabilities. Recurring failures become reviewed constraints. Both are measured,
-refined, and retired when they stop helping.
+[![test](https://github.com/kkrlstrm/runtune/actions/workflows/test.yml/badge.svg)](https://github.com/kkrlstrm/runtune/actions/workflows/test.yml)
+![python](https://img.shields.io/badge/python-3.10%2B-blue) ![deps](https://img.shields.io/badge/core%20dependencies-0-brightgreen)
+![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-Runs are the evidence; tuning is what happens afterward. This is not model training, and it
-is not autonomous self-modification: the learner proposes, a named person applies, and the
-learner cannot widen its own boundaries.
+Your coding agents repeat the same mistakes and re-derive the same work every day, and all of
+it is already sitting in their transcripts. RunTune reads those runs from Claude Code, Codex and
+OpenRouter and turns them into proposals:
+
+- **What keeps succeeding becomes a capability:** a skill, a CLI hint, or a purpose-built
+  sub-agent.
+- **What keeps failing becomes a constraint:** a guard rule, or a routing check.
+- **Every adopted change is measured against a control,** and retired when it stops helping.
+
+It proposes; you approve with one reply. It can't widen its own permissions. It is not model
+training, and it doesn't modify itself.
+
+## Try it in 60 seconds
+
+```bash
+pip install git+https://github.com/kkrlstrm/runtune    # zero dependencies
+runtune demo                    # the whole loop on a synthetic trace, in a temp dir
+
+runtune record claude           # backfill your Claude Code history (~/.claude/projects)
+runtune record codex            # and/or Codex (~/.codex/sessions)
+runtune notify                  # one digest: a card + numbered proposals, with a desktop notification
+runtune show --open             # read it
+runtune reply 1,3               # approve items 1 and 3; the rest are snoozed for 28 days
+```
+
+That uses only your local transcripts: no accounts, no database, no network. To keep it
+learning, run `runtune install` to wire the recording hook into Claude Code and Codex, and
+`runtune schedule --install` for a weekly digest. Slack, email and a VM are optional
+extensions, covered below.
+
+**Who it's for:** anyone running Claude Code or Codex seriously enough that the same failures
+and the same boilerplate keep showing up, and anyone routing model calls who wants to know
+what actually ran against what was approved.
 
 ```
                     REAL AGENT WORK   (Claude Code · Codex · OpenRouter)
                           │
-                   recorders (cc-logger, codex-logger, router call log, provider bill)
+     recorders: RunTune's hook · transcript backfill · router call log · provider bill
                           │
                   execution evidence  — one stream, settled attempts only, gaps named
                           │
@@ -38,9 +68,9 @@ learner cannot widen its own boundaries.
                           └──────↺
 ```
 
-## What it does, on one machine's real data
+## What it found in a real deployment
 
-Run against 150 days of one operator's telemetry: 165,224 Claude Code attempts, 2,515 Codex
+Run against 150 days of one team's telemetry: 165,224 Claude Code attempts, 2,515 Codex
 attempts, 70,364 OpenRouter requests plus the provider's own bill, and 17,410 agent
 invocations. That run's proposals were then acted on, and checking each one against reality corrected
 RunTune five times ([Part 3 of the evidence](docs/EVIDENCE.md#part-3-adopting-its-suggestions-and-what-that-showed-2026-09-27)). A sample of what came out:
@@ -53,7 +83,7 @@ RunTune five times ([Part 3 of the evidence](docs/EVIDENCE.md#part-3-adopting-it
 | route | A first version reported two "drift" findings. | **Both were false positives:** one was traffic on a clearance day before the swap took effect, the other a benchmark's failures. Both are now handled with tests. The evidence doc keeps the wrong version. |
 | route | **10,046** billed requests on 16 models never passed through the router; 14 of those models are on no allowlist. | This is the traffic an allowlist cannot see. |
 | constraint | 14 live guard rules, every version measured at its own date against a control. One cut failures **19.1 points** beyond the control. One **raised** them 26.4 points because its message named a flag that didn't exist; **its rewrite cut them 8.8 points**. | Rules have a life. Measuring only a rule's first version condemned one its rewrite had fixed. |
-| experiment | The derived `ttt` skill and nudge in a live three-arm test (36 headless runs). CLI share 2/12 without the skill, 8/23 with it; p = 0.43, and the nudge caused 0 switches within a run. | The artifact was adopted as tracked, and `review` measures its real adoption. An effect that one small test can't establish is measured over time, not assumed. |
+| experiment | The derived `toolkit` skill and nudge in a live three-arm test (36 headless runs). CLI share 2/12 without the skill, 8/23 with it; p = 0.43, and the nudge caused 0 switches within a run. | The artifact was adopted as tracked, and `review` measures its real adoption. An effect that one small test can't establish is measured over time, not assumed. |
 
 The full tables, the method, and every limit are in [docs/EVIDENCE.md](docs/EVIDENCE.md).
 
@@ -72,7 +102,7 @@ runtune schedule --install          # weekly digest + hourly inbox, on this mach
 ```
 
 The same actions are available directly: `runtune derive`, `runtune stage <id>`,
-`runtune apply <id> --approve kai`, and `runtune retire <id> --approve kai --reason …`.
+`runtune apply <id> --approve alice`, and `runtune retire <id> --approve alice --reason …`.
 
 ## It runs on its own
 
@@ -80,7 +110,7 @@ RunTune records, enforces, learns, and measures without any other tool installed
 
 | stage | what does it | where it writes |
 |---|---|---|
-| record Claude Code | `python3 -m runtune.hook --host claude` on PostToolUse / PostToolUseFailure | `~/.runtune/events/<day>.jsonl` |
+| record Claude Code | `python3 -m runtune.hook --host claude` on PostToolUse / PostToolUseFailure; `runtune record claude` backfills from transcripts, including per-agent tokens | `~/.runtune/events/<day>.jsonl` |
 | record Codex | the same hook on Codex, plus `runtune record codex` to read `~/.codex/sessions` rollouts incrementally | same |
 | record OpenRouter | `runtune.record.openrouter.log_call()` from your router; `runtune record openrouter` daily for the bill | `events/`, `spend/` |
 | enforce | the same hook on PreToolUse: monitor / nudge / deny / block, most restrictive wins, capped at each rule's evidence ceiling, fails open | `~/.runtune/audit.jsonl` (hash-chained) |
@@ -97,7 +127,7 @@ Nothing is applied automatically. Out of the box it is all local, with no accoun
 network:
 
 1. **`runtune notify`** derives and reviews, then writes one digest to `.runtune/inbox/`:
-   `latest.md` and a card image in the style of a weekly client report. It also pops a desktop
+   `latest.md` and a card image styled like a weekly status report. It also pops a desktop
    notification (macOS Notification Center, or `notify-send` on Linux).
 2. **`runtune show --open`** prints the digest and opens the card.
 3. **`runtune reply 1,3`** approves items 1 and 3. `all`, `all except 2` and `none` work too.
@@ -183,8 +213,9 @@ taken from AutoRefine, and each candidate records why the narrower rungs don't w
 - **Signal.** Builtins, inline interpreters, and read-only exploration (`cd`, `python3 -c`,
   `ls`, `cat`) are rejected with a stated reason. They form real clusters, but a rule on them
   would fire on almost every command.
-- **Observability.** An agent is never narrowed off a tool the recorder cannot see. cc-logger
-  does not capture `Grep`/`Glob`, so "never used" would be false.
+- **Observability.** An agent is never narrowed off a tool the recorder cannot see. A warehouse
+  recorder that captures only an allowlist of tools can't show `Grep` as used, so "never used"
+  would be false.
 - **Cross-source.** A route verdict from the calls log is checked against the provider's bill
   before it is proposed.
 
@@ -260,7 +291,11 @@ or left out.
   declared lineage, and suppressed gates that still record their verdict. These are
   reimplemented; no code was copied, because that repo ships without a license file.
 
-## Tests
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Extending RunTune (a new channel, a new source, a new
+deriver) is covered in [docs/EXTENDING.md](docs/EXTENDING.md), and the warehouse column contract
+is in [docs/WAREHOUSE.md](docs/WAREHOUSE.md).
 
 ```bash
 python3 -m pytest tests -q      # governance invariants, derivers, measurement, hook, recorders, reply parsing

@@ -41,13 +41,13 @@ def failing_psql() -> Corpus:
 
 def inline_ttt(cli_after_day: int | None = 20) -> Corpus:
     c = Corpus()
-    snippet = ('python3 -c "import sys; sys.path.insert(0,\'scripts/lib\'); from ttt import db, clickup; '
-               'print(db.query_master(\'select 1\')); clickup.tasks_for(x)"')
+    snippet = ('python3 -c "import sys; sys.path.insert(0,\'scripts/lib\'); from toolkit import db, crm; '
+               'print(db.query_master(\'select 1\')); crm.accounts_for(x)"')
     for i in range(40):
         c.events.append(ev("claude", f"s{i % 12}", day=i, text=snippet))
     if cli_after_day is not None:
         for i in range(15):
-            c.events.append(ev("claude", f"s{i % 6}", day=cli_after_day + i, text="scripts/ttt db master 'select 1'"))
+            c.events.append(ev("claude", f"s{i % 6}", day=cli_after_day + i, text="scripts/toolkit db master 'select 1'"))
     # standard-library-only snippets must NOT become a capability
     for i in range(40):
         c.events.append(ev("claude", f"s{i % 12}", day=i, text='python3 -c "import json, sys; print(1)"'))
@@ -65,7 +65,7 @@ def fanouts() -> Corpus:
                 status="completed", tools=tools, tokens_out=100, tokens_reread=30000, token_verified=True))
     for i in range(12):
         c.invocations.append(Invocation(
-            source="claude", invocation=f"db{i}", session=f"q{i}", agent_type="db-reader",
+            source="claude", invocation=f"db{i}", session=f"q{i}", agent_type="sql-reader",
             started=T0 + timedelta(days=i), ended=None, status="completed", tools=Counter({"Bash": 4}),
             tokens_out=100, tokens_reread=5000, token_verified=True))
     return c.finalize()

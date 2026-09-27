@@ -4,20 +4,36 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "runtune"
-version = "0.1.0"
-description = "Agents should get better from their runs: telemetry -> reviewed capabilities and constraints, measured and retired."
+version = "0.2.0"
+description = "Agents should get better from their runs: Claude Code, Codex and OpenRouter telemetry -> reviewed capabilities and constraints, measured and retired."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [{ name = "Kai Karlstrom" }]
+keywords = ["claude-code", "codex", "openrouter", "ai-agents", "agent-telemetry", "guardrails", "skills", "llmops"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Quality Assurance",
+]
 dependencies = []
 
 [project.optional-dependencies]
 postgres = ["psycopg[binary]>=3.1"]
+card = ["playwright>=1.40"]
 dev = ["pytest>=7"]
+
+[project.urls]
+Homepage = "https://github.com/kkrlstrm/runtune"
+Issues = "https://github.com/kkrlstrm/runtune/issues"
+Evidence = "https://github.com/kkrlstrm/runtune/blob/main/docs/EVIDENCE.md"
 
 [project.scripts]
 runtune = "runtune.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["runtune*"]
+
+[tool.setuptools.package-data]
+runtune = ["data/*.jsonl"]

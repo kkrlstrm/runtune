@@ -1,4 +1,4 @@
-# TZ=Europe/Berlin (fly.toml). supercronic logs every fire; `grep msg=starting` in the
+# TZ=UTC (fly.toml). supercronic logs every fire; `grep msg=starting` in the
 # machine log is the liveness test — a job that can no-op proves nothing by exiting 0.
 0 9 * * 1   /app/deploy/fly/run-weekly.sh
 7 * * * *   /app/deploy/fly/run-inbox.sh

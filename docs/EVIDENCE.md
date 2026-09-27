@@ -1,10 +1,17 @@
-# Evidence
+# Evidence: a production case study
 
-Two kinds of evidence support RunTune. The first is prior experiments from the system it was
-built from (the GTM Bench series), which motivated its design choices. The second is RunTune
-itself run against that system's real telemetry. Every number below was produced by a
-command in this repo or by the source named next to it. Client names, contact data and
-message bodies are left out on purpose; everything shown is an aggregate.
+RunTune was built against one real deployment: a go-to-market team whose engineers run Claude
+Code and Codex all day, fan work out to hundreds of sub-agents, and route cheap model work
+through OpenRouter under a written allowlist. Two kinds of evidence come from it:
+
+- **Part 1:** earlier experiments by the author (the GTM Bench write-ups), which set RunTune's
+  design choices.
+- **Parts 2 and 3:** RunTune run against that deployment's real telemetry, and then its
+  suggestions acted on and checked.
+
+Internal tool names are replaced with neutral ones (`toolkit`, `fetch-page.py`, `research-fast`).
+Customer names, contact data and message bodies are left out, and every number is an
+aggregate. [Reproduce it on your own data](#reproduce-it-on-your-own-data) at the end.
 
 ## Part 1: prior results that set the design
 
@@ -16,7 +23,7 @@ message bodies are left out on purpose; everything shown is an aggregate.
 | **A model on no allowlist ran 1,464 production requests** and classified 34,162 rows; scored later, it was worst of five. *(ep. 4)* | The route deriver compares the allowlist, the router's call log, and the provider's bill. Drift, unapproved traffic and unrouted spend are constraint candidates. |
 | **The grader was wrong four times before the models were:** accuracy tracked position bias (r = +0.88), a grader scored every arm 0.0%, a cost estimate was 50x low, and a container ran stale code. *(ep. 5)* | The instrument is checked first. `scan` states coverage and gaps before any derivation. Token figures are used only from per-agent-verified rows (below). |
 | **Agent throughput peaks at 5–8 concurrent agents.** The sub-agent token columns had been inflated 38.9x by a root-transcript broadcast bug, and the check agreed because session totals were sums of the same rows. *(ep. 6)* | Invocation tokens are read only where `token_source = 'transcript-verified'`. The subagent deriver says "projection, not a measurement" whenever it cites token ratios. |
-| **Generic workflow sub-agents re-read ~177 tokens per output token**, against 23–59 for narrow purpose-built types. *(8,824 invocations; find-dials preamble study)* | The subagent deriver proposes narrow types whose tool grant is the measured census, and says when no saving is expected. |
+| **Generic workflow sub-agents re-read ~177 tokens per output token**, against 23–59 for narrow purpose-built types. *(8,824 invocations; a sub-agent preamble study)* | The subagent deriver proposes narrow types whose tool grant is the measured census, and says when no saving is expected. |
 | **CallusGuard's funnel:** 136 derived candidates, 12 promoted (9%). 97 days of enforcement; two promoted rules demonstrably did nothing or made things worse. *(callusguard README)* | The same funnel shape, now across four artifact kinds. Withheld candidates are reported with their failing gate. `review` flags a rule that raised failures. |
 
 ## Part 2: RunTune on real telemetry (2026-09-27)
@@ -59,17 +66,17 @@ change minus the control's change.
 
 | rule | before | after | net vs control | attempt share | reading |
 |---|---|---|---:|---:|---|
-| page-digest-missing-entity | 19.8% (126) | 1.7% (115) | **−19.1** | −9% | works |
+| fetch-page-missing-arg | 19.8% (126) | 1.7% (115) | **−19.1** | −9% | works |
 | shell-source-dotenv | 16.1% (248) | 4.8% (271) | **−15.4** | +8% | works |
 | bash-busywait-poll-loop | 15.6% (90) | 2.5% (118) | −9.4 | +65% | works |
 | macos-timeout-not-installed | 27.0% (37) | 17.9% (134) | −5.5 | +358% | probably works; attempts grew fast |
 | bash-cd-relative-cwd-drift | 13.3% (120) | 10.0% (10) | −4.4 | −85% | agents stopped; thin after |
 | bash-inline-shell-function-def | 6.4% (47) | 3.3% (30) | −3.2 | −74% | agents stopped |
 | bash-sleep-chained-command | 4.5% (44) | 0.0% (18) | −3.1 | −54% | agents stopped |
-| phoneburner-db-hand-rolled | 19.0% (79) | 21.1% (19) | +3.5 | −73% | agents stopped; residual hard cases |
+| dialer-db-hand-rolled | 19.0% (79) | 21.1% (19) | +3.5 | −73% | agents stopped; residual hard cases |
 | curl-page-scrape-spoofed-ua | 0.0% (97) | 5.6% (18) | +9.2 | −77% | agents stopped; residual |
 | bare-psql-no-target | 7.6% (952) | 22.6% (93) | +10.7 | **−90%** | behavior changed; the rate rose on the residual cases |
-| page-digest-dead-domain-retry (v1, 07-06) | 7.7% (704) | 34.4% (607) | **+26.4** | −6% | **made failures worse**; the 07-27 rewrite cut them −8.8 (Part 3) |
+| fetch-page-dead-domain-retry (v1, 07-06) | 7.7% (704) | 34.4% (607) | **+26.4** | −6% | **made failures worse**; the 07-27 rewrite cut them −8.8 (Part 3) |
 
 Four rules had fewer than 5 attempts on one side and are reported as insufficient.
 
@@ -99,7 +106,7 @@ Rules derived only from Claude Code traffic also match Codex traffic. For exampl
 | workflow-subagent (generic) | 8,871 | 86% | 263 (1,532 rows) | Bash 84%, WebSearch 12%, WebFetch 5%, Read 2% |
 | general-purpose (generic) | 1,323 | 95% | 44 (252 rows) | Bash 65%, WebSearch 48%, Write 43% |
 | web-researcher (narrow) | 264 | 95% | 142 (34 rows) | Bash 94%, WebSearch 61%, WebFetch 51% |
-| dial-researcher (narrow) | 435 | 99.8% | 255 (27 rows) | Bash 100% |
+| contact-researcher (narrow) | 435 | 99.8% | 255 (27 rows) | Bash 100% |
 
 The narrow types have few verified-token rows, so their ratios are indicative only. For
 `general-purpose`, the proposal explicitly says no token saving is expected.
@@ -112,10 +119,10 @@ The narrow types have few verified-token rows, so their ratios are indicative on
 | mode | model | status | calls | ok | $/ok call |
 |---|---|---|---:|---:|---:|
 | extract-accurate | deepseek-v4-flash | approved | 57,566 | 99.1% | 0.00031 |
-| research-dial-fast | gemini-3.1-flash-lite | approved | 5,948 | 99.7% | 0.0051 |
-| research-dial-fast | gpt-5.6-luna-pro | **drift** (1,902 after clearance) | 3,440 | 99.1% | 0.0107 |
-| research-dial-second | gpt-5.6-luna-pro | approved | 552 | 100% | 0.0077 |
-| research-dial-second | gemini-3.1-flash-lite | **drift**, 32% fail after clearance | 540 | 84.8% | 0.0029 |
+| research-fast | gemini-3.1-flash-lite | approved | 5,948 | 99.7% | 0.0051 |
+| research-fast | gpt-5.6-luna-pro | **drift** (1,902 after clearance) | 3,440 | 99.1% | 0.0107 |
+| research-second | gpt-5.6-luna-pro | approved | 552 | 100% | 0.0077 |
+| research-second | gemini-3.1-flash-lite | **drift**, 32% fail after clearance | 540 | 84.8% | 0.0029 |
 | extract-bulk / filter-auto-reply | — | idle to the router, **billed 630 / 1,095 requests outside it** | 0 | | |
 | lint-code | — | idle and 132 days since verification | 0 | | |
 
@@ -135,23 +142,23 @@ RunTune itself; each is fixed and has a test.
 
 | suggestion | what was done | what reality showed |
 |---|---|---|
-| **route drift:** `research-dial-fast` ran 1,902 requests on an off-policy model after its clearance | traced by the hour | **False positive.** The two dial modes swapped models at about 11:00 UTC on their clearance day, and every "drift" call came from that morning. A date-only clearance can't say what hour it took effect. RunTune now treats the clearance day as a transition day. |
-| **route unreliable:** flash-lite fails 32% of `research-dial-second` | traced the callers | **False positive.** 81 of the 248 failing calls came from `transport_bench.py`, a benchmark. RunTune now separates benchmark and eval callers from production. |
-| **idle-but-billed modes:** two approved models billed outside the router | traced the callers | **Real.** `scripts/lib/ttt/directory.py` called OpenRouter over direct HTTP (navigator and extractor) and never recorded to the ledger. **Fixed:** both calls now record mode, model, cost, tokens and latency. Verified live: 2 real calls produced 2 ledger rows, 70,364 → 70,366. The navigator records under `directory-nav`, which is on no allowlist, so it now appears as unapproved traffic until it is cleared with its existing eval. The rest of the bill gap is benchmark traffic from 09-07 to 09-09. |
-| **guard rule harmful:** `page-digest-dead-domain-retry` raised failures 26.4 points beyond the control | measured every version | **Half wrong.** Version 1 (07-06) did raise failures: its message named a flag that didn't exist, and calls passing that flag spiked to 53 in one week. The 07-27 rewrite fixed it, cutting failures 8.8 points beyond the control over 28 days (15.6 over 21), and the bad flag disappeared. RunTune had measured only version 1. `replay --measure` now measures every version (`meta.added` and `meta.updated`). |
-| **capability:** a `use-ttt-cli` skill plus a companion nudge, derived from 5,899 inline programs | a live three-arm experiment: headless Sonnet, the repo as-is (A), plus the skill (B), plus the skill and RunTune's own hook enforcing the nudge (C) | See below. **Adopted through RunTune's own promoter**, so `review` will measure real adoption over the coming weeks. |
+| **route drift:** `research-fast` ran 1,902 requests on an off-policy model after its clearance | traced by the hour | **False positive.** Two research modes swapped models at about 11:00 UTC on their clearance day, and every "drift" call came from that morning. A date-only clearance can't say what hour it took effect. RunTune now treats the clearance day as a transition day. |
+| **route unreliable:** flash-lite fails 32% of `research-second` | traced the callers | **False positive.** 81 of the 248 failing calls came from a transport benchmark script. RunTune now separates benchmark and eval callers from production. |
+| **idle-but-billed modes:** two approved models billed outside the router | traced the callers | **Real.** A directory-lookup helper called OpenRouter over direct HTTP (navigator and extractor) and never recorded to the ledger. **Fixed:** both calls now record mode, model, cost, tokens and latency. Verified live: 2 real calls produced 2 ledger rows, 70,364 → 70,366. The navigator records under `directory-nav`, which is on no allowlist, so it now appears as unapproved traffic until it is cleared with its existing eval. The rest of the bill gap is benchmark traffic from 09-07 to 09-09. |
+| **guard rule harmful:** `fetch-page-dead-domain-retry` raised failures 26.4 points beyond the control | measured every version | **Half wrong.** Version 1 (07-06) did raise failures: its message named a flag that didn't exist, and calls passing that flag spiked to 53 in one week. The 07-27 rewrite fixed it, cutting failures 8.8 points beyond the control over 28 days (15.6 over 21), and the bad flag disappeared. RunTune had measured only version 1. `replay --measure` now measures every version (`meta.added` and `meta.updated`). |
+| **capability:** a `use-toolkit-cli` skill plus a companion nudge, derived from 5,899 inline programs | a live three-arm experiment: headless Sonnet, the repo as-is (A), plus the skill (B), plus the skill and RunTune's own hook enforcing the nudge (C) | See below. **Adopted through RunTune's own promoter**, so `review` will measure real adoption over the coming weeks. |
 | **subagent:** generic workflow fan-outs using only `Bash/Read/WebFetch/WebSearch` should get a purpose-built type | already done on 09-11, before RunTune existed | Measured after the fact. Narrow types were 0–25% of sub-agent invocations in the weeks before and **90%, then 81%** in the two weeks after. |
-| **lifecycle:** `lint-code` is idle for 150 days and 132 days past verification | **not applied** | It is still named in `or_router.py` and a self-test asserts the two agree, so retiring it is a change to shared policy. It stays in the digest for a person to decide. |
+| **lifecycle:** `lint-code` is idle for 150 days and 132 days past verification | **not applied** | It is still named in the router's code and a self-test asserts the two agree, so retiring it is a change to shared policy. It stays in the digest for a person to decide. |
 
 Three more defects surfaced while producing the first real digest:
 
 - **A generated pattern that could never fire.** The shape is keyed on the script's basename,
-  but agents type `python3 scripts/page-digest.py`, and the pattern required the two words to
+  but agents type `python3 scripts/fetch-page.py`, and the pattern required the two words to
   be adjacent. The replay gate passed it anyway: 0 matches meant 0 collateral. Patterns now
   allow a path prefix, and a new gate refuses a pattern that doesn't match at least half of
   the failures it was derived from.
-- **A skill that pointed at a command that doesn't exist.** The first draft wrote `ttt db
-  master`, but the command is `scripts/ttt`. Skills now cite commands exactly as typed in
+- **A skill that pointed at a command that doesn't exist.** The first draft wrote `toolkit db
+  master`, but the command is `scripts/toolkit`. Skills now cite commands exactly as typed in
   successful calls.
 - **A reply reader with no lower bound.** When Slack had not yet returned the digest's
   timestamp, the reader would have scanned the whole DM history, so an old message could be
@@ -159,16 +166,16 @@ Three more defects surfaced while producing the first real digest:
 
 ### The capability experiment
 
-`experiments/ttt-skill-ab/`: four read-only tasks, three arms, headless Claude Sonnet runs,
+`experiments/cli-skill-ab/`: four read-only tasks, three arms, headless Claude Sonnet runs,
 arms shuffled within each task-and-rep block, and ground truth computed beforehand.
 
 **Round 1 (24 runs) measured nothing.** It is kept to show why. Every answer was correct, but
-38 of 50 tool calls read `config/clients.json` directly: the tasks had a cheaper path than
+38 of 50 tool calls read a local registry file directly: the tasks had a cheaper path than
 the library, so they could not test a skill about the library.
 
-**Round 2 (36 runs)** used tasks that can only be answered through the database or GitLab.
+**Round 2 (36 runs)** used tasks that can only be answered through the database or the git host.
 
-| arm | runs | answered correctly | reached `ttt` by CLI | by inline program |
+| arm | runs | answered correctly | reached `toolkit` by CLI | by inline program |
 |---|---:|---:|---:|---:|
 | A: repo as-is | 12 | 12 | 2 | 10 |
 | B: + skill | 12 | 12 | 3 | 9 |
@@ -197,7 +204,25 @@ real traffic. If adoption doesn't move in four weeks, review proposes retiring i
 - **Observational.** No rate here came from a controlled re-run. Controls make the
   before/after comparisons defensible; they do not make them experiments.
 - **28-day windows** are a choice. Longer windows gain sample size and lose attribution.
-- **The capture allowlist.** cc-logger does not see every tool, and Codex coverage has gaps of
-  up to 61 days.
+- **The capture allowlist.** The warehouse recorder (cc-logger) does not see every tool, and
+  Codex coverage had gaps of up to 61 days. RunTune's own hook and transcript backfill see
+  every tool.
 - **`ok` is not quality.** No route finding says a model is good.
 - **The derivers are counters.** They find what recurs; a human decides what it means.
+
+## Reproduce it on your own data
+
+Everything above comes from commands in this repo. On your own machine:
+
+```bash
+runtune record claude                 # backfill Claude Code from ~/.claude/projects (last ~30 days)
+runtune record codex                  # backfill Codex from ~/.codex/sessions
+runtune scan                          # coverage, gaps, model epochs
+runtune derive                        # proposals + the withheld table (the funnel)
+runtune agents                        # per-agent-type census and verified token ratios
+runtune replay --ruleset rules.json --measure   # every rule version, against a control
+runtune routes --routes routes.json   # approved vs ran vs billed (needs the router log + bill)
+```
+
+If you run the experiment, publish the null results too. Round 1 above measured nothing, and
+it is the most useful paragraph on this page for anyone designing their own.

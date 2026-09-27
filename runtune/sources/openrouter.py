@@ -2,12 +2,12 @@
 
 Three inputs, each answering a different question:
 
-  calls      (gtm_ops.openrouter_calls) one row per request from our own router,
+  calls      (table $RUNTUNE_OR_CALLS_TABLE, default openrouter_calls) one row per request from our own router,
              tagged with the MODE it claimed, the model that served it, whether it
              came back ok, what it cost, and which caller file sent it.
              -> "what ran, for which job, and did it work"
 
-  activity   (gtm_ops.openrouter_activity) OpenRouter's own per-day, per-model
+  activity   (table $RUNTUNE_OR_ACTIVITY_TABLE, default openrouter_activity) OpenRouter's own per-day, per-model
              billing snapshot. It sees every request on the key, including ones
              that never went through the router.
              -> "what was billed" — the check on the calls log's completeness
@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 
 from ..evidence.schema import Corpus, Coverage, Event
 from . import pg
@@ -36,18 +37,28 @@ from . import pg
 _CALLS_SQL = """
 SELECT call_id, ts, coalesce(mode, '(no mode)') AS mode, model, usd, tok_in, tok_out, ok,
        route, caller_file, caller_func, entrypoint, label, duration_ms, host
-FROM gtm_ops.openrouter_calls WHERE ts >= now() - make_interval(days => %s)
+FROM {calls_table} WHERE ts >= now() - make_interval(days => %s)
 """
 
 _ACTIVITY_SQL = """
 SELECT usage_date, model, provider_name, requests, prompt_tokens, completion_tokens,
        reasoning_tokens, usage_usd
-FROM gtm_ops.openrouter_activity WHERE usage_date >= (now() - make_interval(days => %s))::date
+FROM {activity_table} WHERE usage_date >= (now() - make_interval(days => %s))::date
 """
 
 
+def _table(env: str, default: str) -> str:
+    name = os.environ.get(env, default)
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?", name):
+        raise SystemExit(f"runtune: ${env}={name!r} is not a plain [schema.]table name")
+    return name
+
+
 def load(dsn: str, days: int = 120, routes_path: str | None = None) -> Corpus:
-    corpus = from_rows(pg.query(dsn, _CALLS_SQL, [days]), pg.query(dsn, _ACTIVITY_SQL, [days]))
+    """Column contract: docs/WAREHOUSE.md."""
+    calls = _CALLS_SQL.format(calls_table=_table("RUNTUNE_OR_CALLS_TABLE", "openrouter_calls"))
+    activity = _ACTIVITY_SQL.format(activity_table=_table("RUNTUNE_OR_ACTIVITY_TABLE", "openrouter_activity"))
+    corpus = from_rows(pg.query(dsn, calls, [days]), pg.query(dsn, activity, [days]))
     if routes_path:
         corpus.route_policy = load_policy(routes_path)
     return corpus

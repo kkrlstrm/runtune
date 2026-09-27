@@ -1,0 +1,52 @@
+{
+ "_readme": "Copy to tasks.local.json and fill in real questions + ground truths. Each task: [label, prompt, expected substring of the answer]. Round 2 tasks must be answerable ONLY through the library under test (round 1 showed agents take any cheaper path). `library` names the helper library under test: its import name, its CLI, and the repo the agents run in. Put the RunTune-generated skill in ./skill.local/ and its companion rule in ./nudge.rules.local.json (both gitignored \u2014 they quote your own commands).",
+ "1": [
+  [
+   "registry_count",
+   "How many entries does this repo's <registry file> list? Reply with just the number.",
+   "<n>"
+  ],
+  [
+   "repo_id",
+   "What is the <id field> for '<entity-a>'? Reply with just the value.",
+   "<id>"
+  ],
+  [
+   "db_count_all",
+   "How many rows are in <table> in the <database>? Reply with just the number.",
+   "<n>"
+  ],
+  [
+   "db_project_slug",
+   "What is the <config value> for '<entity-b>'? Reply with just the value.",
+   "<value>"
+  ]
+ ],
+ "2": [
+  [
+   "db_count_all",
+   "How many rows are in <table> in the <database>? Reply with just the number.",
+   "<n>"
+  ],
+  [
+   "db_count_client_a",
+   "How many <records> does <entity-a> have in the <database>? Reply with just the number.",
+   "<n>"
+  ],
+  [
+   "db_count_client_b",
+   "How many <records> are stored for <entity-b> in the <database>? Reply with just the number.",
+   "<n>"
+  ],
+  [
+   "repo_first_line",
+   "What is the first line of README.md in <entity-a>'s repository? Reply with just that line.",
+   "<line>"
+  ]
+ ],
+ "library": {
+  "module": "toolkit",
+  "cli": "scripts/toolkit",
+  "repo": "~/path/to/your/repo"
+ }
+}

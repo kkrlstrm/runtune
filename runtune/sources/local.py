@@ -26,9 +26,15 @@ def load(days: int = 120, routes: str | None = None) -> Corpus:
         for p in sorted(glob.glob(os.path.join(home.root(), kind, "*.jsonl"))):
             if os.path.basename(p)[:10] >= cutoff:
                 corpus.extend(jsonl.load(p))
+    # A transcript that grew after it was first read can yield a second invocation
+    # record for the same agent; the latest one is complete.
+    corpus.invocations = list({(i.source, i.invocation): i for i in corpus.invocations}.values())
+    # The transcript backfill writes an invocation record per sub-agent (with its own
+    # tokens); hook-only recordings do not, so rebuild those from their events.
+    known = {(i.source, i.invocation) for i in corpus.invocations}
     by_inv = defaultdict(list)
     for e in corpus.events:
-        if e.invocation and e.actor != "root":
+        if e.invocation and e.actor != "root" and (e.source, e.invocation) not in known:
             by_inv[(e.source, e.invocation)].append(e)
     for (src, inv), evs in by_inv.items():
         corpus.invocations.append(Invocation(

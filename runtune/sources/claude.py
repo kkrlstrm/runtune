@@ -87,6 +87,7 @@ def from_rows(rows, inv_rows=()) -> Corpus:
             failures=per_inv_fail.get(r["invocation_id"], 0),
         ))
     cov.notes.append("capture is cc-logger's tool allowlist, not every call")
+    corpus.capture_allowlist = {"claude": {"Agent", "Bash", "Edit", "Write", "Read", "Skill", "WebFetch", "WebSearch"}}
     corpus.coverage["claude"] = cov
     return corpus.finalize()
 

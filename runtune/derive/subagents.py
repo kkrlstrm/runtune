@@ -46,14 +46,12 @@ FANOUT_MIN = 5          # agents of one type in one session = a fan-out
 FALLBACK_BELOW = 0.05   # a tool used by fewer than 5% of agents is a fallback grant
 MAX_GRANT = 4           # above this many tools a narrow type saves little over the generic one
 
-# What each recorder can see. cc-logger captures an allowlist of tools, so a grant
-# of Grep or Glob can never show up as used — unobservable is not unused, and an
-# over-grant finding on an invisible tool would narrow a grant on no evidence.
-OBSERVABLE = {"claude": {"Agent", "Bash", "Edit", "Write", "Read", "Skill", "WebFetch", "WebSearch"}}
-
-
-def observable(source: str, tool: str) -> bool:
-    seen = OBSERVABLE.get(source)
+# What each recorder can see. A recorder that captures an allowlist of tools (the
+# cc-logger warehouse does) can never show Grep or Glob as used — unobservable is not
+# unused, and an over-grant finding on an invisible tool would narrow a grant on no
+# evidence. Transcripts and RunTune's own hook see every tool.
+def observable(corpus, source: str, tool: str) -> bool:
+    seen = corpus.capture_allowlist.get(source)
     return seen is None or tool in seen or tool.startswith("mcp__")
 
 
@@ -191,8 +189,8 @@ def derive(corpus, agents_dir: str | None = None) -> tuple[list, list]:
         prof = next((p for (s, t), p in profiles.items() if t == name), None)
         granted = [g for g in d["tools"] if g != "*"]
         if prof and granted and prof["invocations"] >= 10:
-            unused = [g for g in granted if g not in prof["census"] and observable(prof["source"], g)]
-            invisible = [g for g in granted if not observable(prof["source"], g)]
+            unused = [g for g in granted if g not in prof["census"] and observable(corpus, prof["source"], g)]
+            invisible = [g for g in granted if not observable(corpus, prof["source"], g)]
             if unused:
                 c = Candidate(
                     kind="subagent", key=f"overgrant|{name}",
