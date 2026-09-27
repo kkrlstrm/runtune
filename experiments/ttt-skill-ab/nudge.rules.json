@@ -1,0 +1,20 @@
+{
+ "rules": [
+  {
+   "id": "nudge-inline-ttt",
+   "tool": "Bash",
+   "field": "command",
+   "action": "nudge",
+   "any": [
+    "(?:python3?\\s+(?:-c|-\\s*<<)|<<).*(?:from\\s+ttt\\s+import|import\\s+ttt\\b)"
+   ],
+   "message": "There is a CLI for ttt \u2014 call scripts/ttt <group> <verb> (e.g. scripts/ttt client <slug>, scripts/ttt db master \"SELECT ...\") instead of writing a program to import it.",
+   "meta": {
+    "derived_by": "runtune",
+    "pairs_with": "cap-inline-ttt-36789131",
+    "note": "arm only after the CLI ships; a nudge toward a tool that does not exist is how callusguard's fetch-dead-domain rule raised failures 7%\u219217%",
+    "action_ceiling": "nudge"
+   }
+  }
+ ]
+}

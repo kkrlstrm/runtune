@@ -83,9 +83,12 @@ def routing() -> Corpus:
                            model="deepseek/v4-flash", ok=i % 30 != 0, usd=0.001, actor="extract.py:run"))
     for i in range(30):  # a cheaper, equally reliable challenger inside the same mode
         c.events.append(ev("openrouter", "job", day=i % 20, surface="extract", kind="model",
-                           model="qwen/cheap", ok=True, usd=0.0002, actor="bench.py:run"))
+                           model="qwen/cheap", ok=True, usd=0.0002, actor="extract.py:run"))
     for i in range(25):  # ran BEFORE `dial` was re-cleared on 08-10 -> history, not drift
         c.events.append(ev("openrouter", "job", day=i % 5, surface="dial", kind="model", model="openai/old", usd=0.01))
+    for i in range(25):  # a benchmark failing on an off-policy model -> NOT drift, NOT unreliable
+        c.events.append(ev("openrouter", "job", day=12 + i % 5, surface="dial", kind="model", model="google/x",
+                           ok=i % 3 != 0, usd=0.001, actor="transport_bench.py:run"))
     for i in range(25):  # ran AFTER re-clearance on a different model -> drift
         c.events.append(ev("openrouter", "job", day=12 + i % 5, surface="dial", kind="model", model="openai/old",
                            usd=0.01))

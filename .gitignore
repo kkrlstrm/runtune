@@ -7,3 +7,5 @@ build/
 dist/
 .env
 local/
+experiments/**/*.log
+experiments/**/tasks.local.json

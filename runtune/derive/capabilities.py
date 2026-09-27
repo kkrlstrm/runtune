@@ -160,7 +160,10 @@ def _observed_invocations(root: str, cli_events) -> list:
             if base in (root, f"{root}.py"):
                 sub = [x for x in toks[i + 1:i + 3] if re.match(r"^[a-z][a-z0-9_-]*$", x)]
                 if sub:
-                    seen[" ".join([root] + sub)] += 1
+                    # keep the command exactly as typed (`scripts/ttt`, not `ttt`): a path
+                    # the agent drops is a "command not found" the skill caused
+                    head = " ".join(toks[max(0, i - 1):i + 1]) if base.endswith(".py") and i else t
+                    seen[" ".join([head] + sub)] += 1
                 break
     return [[k, v] for k, v in seen.most_common(15)]
 

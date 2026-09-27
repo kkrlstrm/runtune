@@ -31,8 +31,10 @@ from .lifecycle.store import Workspace
 
 
 def _common(p):
-    p.add_argument("--source", default="claude,codex,openrouter",
-                   help="comma list of claude,codex,openrouter (Postgres), default all")
+    p.add_argument("--source", default=None,
+                   help="comma list of local (RunTune's own recordings) or claude,codex,openrouter "
+                        "(a cc-logger/codex-logger/router warehouse at --db). Default: the warehouse "
+                        "if $RUNTUNE_DB_URL is set, else local")
     p.add_argument("--db", default="RUNTUNE_DB_URL", help="DSN or env var holding one (default $RUNTUNE_DB_URL)")
     p.add_argument("--days", type=int, default=120)
     p.add_argument("--routes", help="path to the model allowlist (routes.json shape)")
@@ -43,7 +45,10 @@ def _common(p):
 
 
 def _corpus(a):
-    srcs = [s for s in a.source.split(",") if s] if not a.jsonl or a.source != "claude,codex,openrouter" else []
+    if a.source is None:
+        warehouse = "://" in a.db or bool(os.environ.get(a.db))
+        a.source = "" if a.jsonl else ("claude,codex,openrouter" if warehouse else "local")
+    srcs = [s for s in a.source.split(",") if s]
     key = re.sub(r"[^a-z0-9]+", "-", f"{','.join(srcs)}-{a.days}-{a.routes}-{a.jsonl}".lower())[:120]
     path = os.path.join(a.workspace, f".corpus-{key}.pkl")
     if a.cache and os.path.exists(path) and time.time() - os.path.getmtime(path) < a.cache * 60:
@@ -167,19 +172,25 @@ def cmd_replay(a):
         shell = lambda e: e.surface in constraints.SHELL_SURFACES  # noqa: E731
         for r in rules:
             pats = r.get("any") or ([r["pattern"]] if r.get("pattern") else [])
-            added = (r.get("meta") or {}).get("added")
-            if r.get("tool") not in ("Bash", None) or not pats or not added:
+            meta = r.get("meta") or {}
+            # Every version is measured: a rule rewritten on `updated` is a different
+            # intervention from the one added on `added`, and judging today's rule by
+            # its first version's effect condemned a rule its rewrite had fixed.
+            versions = [(k, meta[k]) for k in ("added", "updated") if meta.get(k)]
+            if r.get("tool") not in ("Bash", None) or not pats or not versions:
                 continue
             rx = re.compile("|".join(f"(?:{p})" for p in pats))
             m = lambda e, rx=rx: shell(e) and bool(rx.search(e.text))  # noqa: E731
-            res = measure.before_after(c, m, added, days=a.window, control=lambda e, m=m: shell(e) and not m(e))
-            b, af = res["before"]["target"], res["after"]["target"]
-            pct = lambda x: "—" if x is None else f"{x:.1%}"  # noqa: E731
-            sgn = lambda x: "—" if x is None else f"{x * 100:+.1f}"  # noqa: E731
-            share = res.get("attempt_share_change")
-            print(f"| {r.get('id')} | {res['at']} | {pct(b['fail_rate'])} ({b['attempts']}) "
-                  f"| {pct(af['fail_rate'])} ({af['attempts']}) | {sgn(res.get('net_change'))} "
-                  f"| {'—' if share is None else f'{share:+.0%}'} | {res['verdict']} |")
+            for label, at in versions:
+                res = measure.before_after(c, m, at, days=a.window, control=lambda e, m=m: shell(e) and not m(e))
+                b, af = res["before"]["target"], res["after"]["target"]
+                pct = lambda x: "—" if x is None else f"{x:.1%}"  # noqa: E731
+                sgn = lambda x: "—" if x is None else f"{x * 100:+.1f}"  # noqa: E731
+                share = res.get("attempt_share_change")
+                print(f"| {r.get('id')}{' (' + label + ')' if len(versions) > 1 else ''} | {res['at']} "
+                      f"| {pct(b['fail_rate'])} ({b['attempts']}) "
+                      f"| {pct(af['fail_rate'])} ({af['attempts']}) | {sgn(res.get('net_change'))} "
+                      f"| {'—' if share is None else f'{share:+.0%}'} | {res['verdict']} |")
     return 0
 
 
@@ -195,6 +206,93 @@ def cmd_agents(a):
         r["census"] = ", ".join(f"{k} {v:.0%}" for k, v in list(r["census"].items())[:6])
     print(report.table(rows, ["source", "agent_type", "invocations", "sessions", "completed_rate",
                               "reread_per_output", "verified_token_rows", "census"]))
+    return 0
+
+
+def cmd_record(a):
+    if a.what == "codex":
+        from .record import codex
+        print(json.dumps(codex.ingest(a.root or "~/.codex/sessions")))
+    elif a.what == "openrouter":
+        from .record import openrouter
+        print(json.dumps(openrouter.snapshot_activity()))
+    return 0
+
+
+def cmd_install(a):
+    """Print the hook wiring. Writing a host's settings file is left to a person:
+    it is a protected path, and the learner never writes its own enforcement."""
+    py = sys.executable
+    cmd = f"{py} -m runtune.hook --host {{host}}"
+    claude = {"hooks": {ev: [{"matcher": "*", "hooks": [{"type": "command", "command": cmd.format(host="claude")}]}]
+                        for ev in ("PreToolUse", "PostToolUse", "PostToolUseFailure")}}
+    print("# Claude Code — merge into ~/.claude/settings.json (or a project's .claude/settings.json):")
+    print(json.dumps(claude, indent=2))
+    print("\n# Codex — add to ~/.codex/config.toml:")
+    for ev in ("PreToolUse", "PostToolUse"):
+        print(f'[[hooks.{ev}]]\nmatcher = "*"\ncommand = ["{py}", "-m", "runtune.hook", "--host", "codex"]\n')
+    print("# Codex history: schedule `runtune record codex` (reads ~/.codex/sessions, incremental).")
+    print("# OpenRouter: call runtune.record.openrouter.log_call() from your router; schedule "
+          "`runtune record openrouter` daily (the provider keeps 30 days).")
+    return 0
+
+
+def _run_for_digest(a, ws):
+    c = _corpus(a)
+    cands, held = [], []
+    for fn in (lambda: constraints.derive(c), lambda: capabilities.derive_inline(c),
+               lambda: subagents.derive(c, getattr(a, "agents_dir", None)), lambda: routes.derive(c)):
+        got, wh = fn()
+        cands += got
+        held += wh
+    run = {"run_id": datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"), "sources": c.sources(),
+           "days": a.days, "coverage": {k: v.line() for k, v in c.coverage.items()},
+           "epochs": measure.epochs(c),
+           "candidates": [x.to_dict() for x in cands], "withheld": [x.to_dict() for x in held]}
+    ws.save_run(run)
+    return run, review.review(ws, c, 28)
+
+
+def cmd_notify(a):
+    from . import notify
+    from .notify import digest
+    ws = Workspace(a.workspace)
+    run, rows = _run_for_digest(a, ws)
+    d = digest.compose(ws, run, rows, a.limit, a.target_root)
+    st = notify.send(ws, d, a.channel, png=not a.no_png)
+    print(f"digest {st['digest_id']} via {a.channel}: {len(d['items'])} proposals, status {st['status']}",
+          file=sys.stderr)
+    return 0
+
+
+def cmd_inbox(a):
+    from . import notify
+    from .notify import digest
+    ws = Workspace(a.workspace)
+    approver = a.approver or os.environ.get("RUNTUNE_APPROVER")
+    if not approver:
+        print("inbox needs --approver or $RUNTUNE_APPROVER (the name recorded on every apply)", file=sys.stderr)
+        return 2
+    pending = digest.awaiting(ws)
+    if not pending:
+        print("no digest awaiting a reply")
+        return 0
+    for st in pending:
+        new = notify.replies(st)
+        if not new:
+            print(f"{st['digest_id']}: no reply yet ({len(st['items'])} items awaiting)")
+        for text in new:
+            res = digest.act(ws, st, text, approver, a.target_root)
+            notify.answer(st, res["message"])
+            print(f"{st['digest_id']}: {res['status']} — {res['message']}")
+            if res["status"] == "done":
+                st["status"] = "executed"
+                st["result"] = res
+                if a.git and res.get("applied"):
+                    from . import gitops
+                    print(gitops.publish(a.target_root, st["digest_id"], res["message"]))
+                break
+        digest.save(ws, st)
     return 0
 
 
@@ -248,6 +346,23 @@ def main(argv=None) -> int:
     p.add_argument("--workspace", default=".runtune")
     p.add_argument("--approve", required=True)
     p.add_argument("--reason", required=True)
+    p = sub.add_parser("record", help="run a recorder: codex (rollout files) or openrouter (daily bill)")
+    p.add_argument("what", choices=["codex", "openrouter"])
+    p.add_argument("--root", help="Codex sessions dir (default ~/.codex/sessions)")
+    sub.add_parser("install", help="print the hook wiring for Claude Code and Codex")
+    p = sub.add_parser("notify", help="derive + review, then send ONE digest")
+    _common(p)
+    p.add_argument("--channel", choices=["stdout", "slack", "email"], default="stdout")
+    p.add_argument("--agents-dir")
+    p.add_argument("--limit", type=int, default=8)
+    p.add_argument("--target-root", default=".", help="where approved artifacts will be applied; "
+                                                        "its live rules are checked so nothing is re-proposed")
+    p.add_argument("--no-png", action="store_true")
+    p = sub.add_parser("inbox", help="read approvals replied to a digest and apply them")
+    p.add_argument("--workspace", default=".runtune")
+    p.add_argument("--approver")
+    p.add_argument("--target-root", default=".")
+    p.add_argument("--git", action="store_true", help="commit applied changes on a branch and open a PR")
     p = sub.add_parser("ledger")
     p.add_argument("--workspace", default=".runtune")
     a = ap.parse_args(argv)

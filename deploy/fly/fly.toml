@@ -1,0 +1,24 @@
+# Deploy from the runtune repo root:  fly deploy --ha=false --config deploy/fly/fly.toml
+# --ha=false: there is no http_service, so fly's HA default would add a second, STOPPED
+# machine on which supercronic never fires.
+app = "runtune"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  TZ = "Europe/Berlin"
+  RUNTUNE_HOME = "/data/runtune"
+
+# Workspace (.runtune: candidates, artifacts, digests, ledger) + the target-repo clone.
+[[mounts]]
+  source = "runtune_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1024mb"
+
+[deploy]
+  strategy = "immediate"

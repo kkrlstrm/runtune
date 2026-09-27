@@ -69,7 +69,7 @@ change minus the control's change.
 | phoneburner-db-hand-rolled | 19.0% (79) | 21.1% (19) | +3.5 | −73% | agents stopped; residual hard cases |
 | curl-page-scrape-spoofed-ua | 0.0% (97) | 5.6% (18) | +9.2 | −77% | agents stopped; residual |
 | bare-psql-no-target | 7.6% (952) | 22.6% (93) | +10.7 | **−90%** | behavior changed; the rate rose on the residual cases |
-| page-digest-dead-domain-retry | 7.7% (704) | 34.4% (607) | **+26.4** | −6% | **made failures worse** |
+| page-digest-dead-domain-retry (v1, 07-06) | 7.7% (704) | 34.4% (607) | **+26.4** | −6% | **made failures worse**; the 07-27 rewrite cut them −8.8 (Part 3) |
 
 Four rules had fewer than 5 attempts on one side and are reported as insufficient.
 
@@ -106,6 +106,9 @@ The narrow types have few verified-token rows, so their ratios are indicative on
 
 ### Routes
 
+> The two **drift** rows below were later shown to be false positives (Part 3). They are kept
+> as the first version reported them.
+
 | mode | model | status | calls | ok | $/ok call |
 |---|---|---|---:|---:|---:|
 | extract-accurate | deepseek-v4-flash | approved | 57,566 | 99.1% | 0.00031 |
@@ -122,6 +125,71 @@ a scratch copy of the allowlist. Once the bill was compared with the call log, i
 modes in active use by callers that bypass the router. Retiring them on the router's evidence
 alone would have removed a clearance production depends on. The finding now reads "route the
 bypassing caller through the chokepoint", and a test covers it.
+
+
+## Part 3: adopting its suggestions, and what that showed (2026-09-27)
+
+RunTune's first real digest was acted on the same day. The table records each suggestion,
+what was done, and what checking it against reality showed. Five of the findings changed
+RunTune itself; each is fixed and has a test.
+
+| suggestion | what was done | what reality showed |
+|---|---|---|
+| **route drift:** `research-dial-fast` ran 1,902 requests on an off-policy model after its clearance | traced by the hour | **False positive.** The two dial modes swapped models at about 11:00 UTC on their clearance day, and every "drift" call came from that morning. A date-only clearance can't say what hour it took effect. RunTune now treats the clearance day as a transition day. |
+| **route unreliable:** flash-lite fails 32% of `research-dial-second` | traced the callers | **False positive.** 81 of the 248 failing calls came from `transport_bench.py`, a benchmark. RunTune now separates benchmark and eval callers from production. |
+| **idle-but-billed modes:** two approved models billed outside the router | traced the callers | **Real.** `scripts/lib/ttt/directory.py` called OpenRouter over direct HTTP (navigator and extractor) and never recorded to the ledger. **Fixed:** both calls now record mode, model, cost, tokens and latency. Verified live: 2 real calls produced 2 ledger rows, 70,364 → 70,366. The navigator records under `directory-nav`, which is on no allowlist, so it now appears as unapproved traffic until it is cleared with its existing eval. The rest of the bill gap is benchmark traffic from 09-07 to 09-09. |
+| **guard rule harmful:** `page-digest-dead-domain-retry` raised failures 26.4 points beyond the control | measured every version | **Half wrong.** Version 1 (07-06) did raise failures: its message named a flag that didn't exist, and calls passing that flag spiked to 53 in one week. The 07-27 rewrite fixed it, cutting failures 8.8 points beyond the control over 28 days (15.6 over 21), and the bad flag disappeared. RunTune had measured only version 1. `replay --measure` now measures every version (`meta.added` and `meta.updated`). |
+| **capability:** a `use-ttt-cli` skill plus a companion nudge, derived from 5,899 inline programs | a live three-arm experiment: headless Sonnet, the repo as-is (A), plus the skill (B), plus the skill and RunTune's own hook enforcing the nudge (C) | See below. **Adopted through RunTune's own promoter**, so `review` will measure real adoption over the coming weeks. |
+| **subagent:** generic workflow fan-outs using only `Bash/Read/WebFetch/WebSearch` should get a purpose-built type | already done on 09-11, before RunTune existed | Measured after the fact. Narrow types were 0–25% of sub-agent invocations in the weeks before and **90%, then 81%** in the two weeks after. |
+| **lifecycle:** `lint-code` is idle for 150 days and 132 days past verification | **not applied** | It is still named in `or_router.py` and a self-test asserts the two agree, so retiring it is a change to shared policy. It stays in the digest for a person to decide. |
+
+Three more defects surfaced while producing the first real digest:
+
+- **A generated pattern that could never fire.** The shape is keyed on the script's basename,
+  but agents type `python3 scripts/page-digest.py`, and the pattern required the two words to
+  be adjacent. The replay gate passed it anyway: 0 matches meant 0 collateral. Patterns now
+  allow a path prefix, and a new gate refuses a pattern that doesn't match at least half of
+  the failures it was derived from.
+- **A skill that pointed at a command that doesn't exist.** The first draft wrote `ttt db
+  master`, but the command is `scripts/ttt`. Skills now cite commands exactly as typed in
+  successful calls.
+- **A reply reader with no lower bound.** When Slack had not yet returned the digest's
+  timestamp, the reader would have scanned the whole DM history, so an old message could be
+  read as an approval. Reads are now floored at the send time.
+
+### The capability experiment
+
+`experiments/ttt-skill-ab/`: four read-only tasks, three arms, headless Claude Sonnet runs,
+arms shuffled within each task-and-rep block, and ground truth computed beforehand.
+
+**Round 1 (24 runs) measured nothing.** It is kept to show why. Every answer was correct, but
+38 of 50 tool calls read `config/clients.json` directly: the tasks had a cheaper path than
+the library, so they could not test a skill about the library.
+
+**Round 2 (36 runs)** used tasks that can only be answered through the database or GitLab.
+
+| arm | runs | answered correctly | reached `ttt` by CLI | by inline program |
+|---|---:|---:|---:|---:|
+| A: repo as-is | 12 | 12 | 2 | 10 |
+| B: + skill | 12 | 12 | 3 | 9 |
+| C: + skill + nudge hook | 12 | 12 | 5 | 6 |
+
+- **Skill present vs absent:** CLI share 8/23 against 2/12. The direction favours the skill,
+  but Fisher's exact p = 0.43, so the effect is not established.
+- **The skill was never explicitly invoked** in 24 chances. Any effect runs through its
+  one-line listing, not through loading it.
+- **The nudge caused 0 switches** in the 6 runs where it fired. The inline call it nudges
+  still runs and returns the answer, so on a one-question task there is no next call to
+  change. A nudge can only change behavior across calls, which means across sessions, and
+  that is what `review`'s adoption measurement covers.
+- **Cost of the three arms:** identical accuracy (36/36), and median wall time 18.4 s, 15.1 s
+  and 18.2 s.
+
+**Conclusion.** RunTune found a real, established pattern: 5,899 re-derived programs. The
+artifact it generated is safe and cheap, but a controlled test at this size can't show that it
+changes behavior. That is not a reason to keep or drop it on belief. It was adopted as a
+tracked artifact, and `review` will report its adoption share against the 28% baseline on
+real traffic. If adoption doesn't move in four weeks, review proposes retiring it.
 
 ## Limits
 

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -60,6 +61,12 @@ class Constraints(unittest.TestCase):
         self.assertEqual(c.numbers["replay"]["matched_fail"], 6)
         self.assertEqual(c.proposal["ruleset_rule"]["action"], "monitor")
 
+    def test_pattern_matches_path_prefixed_scripts(self):
+        rx = re.compile(constraints.candidate_pattern("python3 page-digest.py"))
+        self.assertTrue(rx.search("python3 scripts/page-digest.py https://x --entity y"))
+        self.assertTrue(rx.search("cd /a && python3 /abs/scripts/page-digest.py u"))
+        self.assertFalse(rx.search("python3 scripts/page-digest.pyc"))
+
     def test_single_session_retry_loop_is_withheld_with_reason(self):
         got, held = constraints.derive(fx.failing_psql())
         self.assertFalse(any("make" in c.key for c in got))
@@ -82,7 +89,7 @@ class Capabilities(unittest.TestCase):
         self.assertIn("db.query_master", dict(c.numbers["verbs_top"]))
         self.assertEqual([r[0] for r in c.ladder if r[1]], ["skill"])
         # the skill names only syntax observed succeeding, never syntax derived from function names
-        self.assertIn("`ttt db master …`", c.proposal["skill_md"])
+        self.assertIn("`scripts/ttt db master …`", c.proposal["skill_md"])
         self.assertNotIn("query-master", c.proposal["skill_md"])
 
     def test_without_cli_proposes_new_capability(self):
@@ -116,6 +123,10 @@ class Routes(unittest.TestCase):
         drift = [c for c in self.got if c.key == "drift|dial|openai/old"][0]
         self.assertEqual(drift.numbers["calls"], 25)
         self.assertIn("preclearance|dial|openai/old", {c.key for c in self.held})
+
+    def test_bench_traffic_is_not_drift(self):
+        self.assertFalse(any("google/x" in k for k in self.keys))
+        self.assertIn("bench|dial|google/x", {c.key for c in self.held})
 
     def test_unapproved_idle_stale_unattributed(self):
         self.assertIn("unapproved|(no mode)|x/rogue", self.keys)
@@ -333,3 +344,122 @@ class LedgerAndRedaction(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Notify(unittest.TestCase):
+    def test_reply_parser_is_strict(self):
+        from runtune.notify.digest import parse_reply as p
+        self.assertEqual(p("1, 3", 5)["approve"], [1, 3])
+        self.assertEqual(p("approve 2-4 please", 5)["approve"], [2, 3, 4])
+        self.assertEqual(p("all", 3)["approve"], [1, 2, 3])
+        self.assertEqual(p("all except 2", 3)["approve"], [1, 3])
+        self.assertEqual(p("all but 2", 3)["approve"], [1, 3])
+        self.assertEqual(p("none", 3)["approve"], [])
+        # the failure that shipped twice elsewhere: a partial approval read as approve-all
+        self.assertEqual(p("all but Number three", 5)["status"], "ambiguous")
+        self.assertEqual(p("the first two", 5)["status"], "ambiguous")
+        self.assertEqual(p("yes to the psql one", 5)["status"], "ambiguous")
+        self.assertEqual(p("7", 5)["status"], "ambiguous")          # out of range
+        self.assertEqual(p("skip 2", 5)["status"], "ambiguous")     # exclusion without 'all'
+        self.assertEqual(p("all 2", 5)["status"], "ambiguous")
+
+    def test_reply_applies_tighten_refuses_widen_snoozes_rest(self):
+        from runtune.notify import digest
+        with tempfile.TemporaryDirectory() as root:
+            ws = Workspace(os.path.join(root, ".runtune"))
+            got, _ = constraints.derive(fx.failing_psql())
+            rts, _ = routes.derive(fx.routing(), today=datetime(2026, 8, 30).date())
+            run = {"run_id": "r1", "candidates": [c.to_dict() for c in got + rts], "withheld": []}
+            ws.save_run(run)
+            d = digest.compose(ws, run, [], limit=20)
+            items = d["items"]
+            psql = next(i["n"] for i in items if i["kind"] == "constraint")
+            widen = next(i["n"] for i in items if i["direction"] == "widen")
+            state = {"digest_id": "d1", "items": items, "status": "awaiting_reply"}
+            res = digest.act(ws, state, f"{psql}, {widen}", "kai", root)
+            self.assertEqual(res["applied"], [psql])
+            self.assertEqual([n for n, _ in res["refused"]], [widen])
+            self.assertTrue(os.path.exists(os.path.join(root, "rules", "runtune.rules.json")))
+            # declined items do not come back next week
+            again = digest.compose(ws, run, [], limit=20)
+            self.assertFalse({i["id"] for i in again["items"]} & {i["id"] for i in items if i["n"] not in (psql, widen)})
+
+    def test_awaiting_ignores_card_files(self):
+        from runtune.notify import digest
+        with tempfile.TemporaryDirectory() as root:
+            ws = Workspace(os.path.join(root, ".runtune"))
+            digest.save(ws, {"digest_id": "d1", "status": "awaiting_reply", "items": []})
+            open(os.path.join(ws.root, "digests", "d1.png"), "wb").write(b"\x89PNG")
+            self.assertEqual([s["digest_id"] for s in digest.awaiting(ws)], ["d1"])
+
+    def test_existing_rule_suppresses_duplicate_proposal(self):
+        got, _ = constraints.derive(fx.failing_psql())
+        c = [x.to_dict() for x in got if "psql" in x.key][0]
+        self.assertEqual(constraints.covered_by(c, [{"id": "live", "tool": "Bash", "any": [r"\bpsql\b"]}]), "live")
+        self.assertIsNone(constraints.covered_by(c, [{"id": "other", "tool": "Bash", "any": [r"\bcurl\b"]}]))
+
+    def test_ambiguous_reply_changes_nothing(self):
+        from runtune.notify import digest
+        with tempfile.TemporaryDirectory() as root:
+            ws = Workspace(os.path.join(root, ".runtune"))
+            got, _ = constraints.derive(fx.failing_psql())
+            run = {"run_id": "r1", "candidates": [c.to_dict() for c in got], "withheld": []}
+            ws.save_run(run)
+            d = digest.compose(ws, run, [])
+            res = digest.act(ws, {"digest_id": "d1", "items": d["items"]}, "all but number one", "kai", root)
+            self.assertEqual(res["status"], "ambiguous")
+            self.assertEqual(ws.artifacts(), [])
+
+
+class StandaloneHook(unittest.TestCase):
+    def test_enforce_ceiling_and_fail_open(self):
+        from runtune import enforce
+        rules = [{"id": "r", "tool": "Bash", "any": [r"\bpsql\b"], "action": "block",
+                  "meta": {"action_ceiling": "nudge"}, "message": "m"},
+                 {"id": "bad", "tool": "Bash", "any": ["("], "action": "deny"}]
+        v = enforce.evaluate(rules, "Bash", {"command": "psql -c x"})
+        self.assertEqual(v["action"], "nudge")
+        self.assertTrue(v["fired"][0]["downgraded"])
+        self.assertTrue(v["faults"])                      # the broken regex is reported, not raised
+        self.assertEqual(enforce.evaluate(rules, "exec_command", {"cmd": "psql"})["action"], "nudge")
+
+    def test_hook_records_and_redacts(self):
+        import io, sys as _sys
+        from runtune import hook
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["RUNTUNE_HOME"] = d
+            try:
+                _sys.stdin = io.StringIO(json.dumps({"hook_event_name": "PostToolUseFailure", "session_id": "s",
+                                                     "tool_name": "Bash", "error": "boom",
+                                                     "tool_input": {"command": "psql postgresql://u:p@h/db"}}))
+                self.assertEqual(hook.main(["--host", "claude"]), 0)
+                from runtune.sources import local
+                c = local.load(days=2)
+                self.assertEqual(len(c.events), 1)
+                self.assertFalse(c.events[0].ok)
+                self.assertNotIn("u:p@h", c.events[0].text)
+            finally:
+                _sys.stdin = _sys.__stdin__
+                del os.environ["RUNTUNE_HOME"]
+
+    def test_codex_rollout_parse(self):
+        from runtune.record import codex
+        lines = [
+            {"type": "session_meta", "timestamp": "2026-09-01T10:00:00Z", "payload": {"id": "sess"}},
+            {"type": "turn_context", "payload": {"model": "gpt-5.6"}},
+            {"type": "response_item", "timestamp": "2026-09-01T10:00:01Z",
+             "payload": {"type": "function_call", "name": "exec_command", "call_id": "c1",
+                         "arguments": json.dumps({"cmd": "psql -c x"})}},
+            {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c1",
+                                                  "output": [{"type": "input_text", "text": "Process exited with code 2\nconnection refused"}]}},
+            {"type": "response_item", "timestamp": "2026-09-01T10:00:02Z",
+             "payload": {"type": "function_call", "name": "exec", "call_id": "c2", "arguments": "{}"}},
+            {"type": "response_item", "payload": {"type": "function_call_output", "call_id": "c2",
+                                                  "output": "Script running with cell ID 3"}},
+        ]
+        with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False) as f:
+            f.write("\n".join(json.dumps(x) for x in lines))
+        evs = codex.parse(f.name)
+        self.assertEqual(len(evs), 1)                    # the backgrounded call is not a success
+        self.assertFalse(evs[0]["ok"])
+        self.assertEqual(evs[0]["model"], "gpt-5.6")

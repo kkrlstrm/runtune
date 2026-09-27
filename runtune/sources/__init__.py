@@ -23,6 +23,9 @@ def load(sources: list[str], db: str | None = None, days: int = 120,
     elif routes:
         from . import openrouter
         corpus.route_policy = openrouter.load_policy(routes)
+    if "local" in sources:
+        from . import local
+        corpus.extend(local.load(days, routes))
     for path in jsonl or []:
         from . import jsonl as jl
         corpus.extend(jl.load(path))

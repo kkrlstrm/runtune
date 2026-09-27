@@ -31,6 +31,7 @@ Findings, by which side of the loop they land on:
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 
@@ -38,6 +39,10 @@ from ..evidence import tiers
 from .candidate import NEUTRAL, TIGHTEN, WIDEN, Candidate
 
 MIN_CALLS = 20
+# Callers whose traffic is an experiment, not production. Their failures and their
+# off-policy models are what a benchmark is FOR; counting them as drift reported a
+# bench's 32% failure rate as a production route failing.
+BENCH_CALLER = re.compile(r"(?i)bench|eval|experiment|probe|regression|test_|_test|scaffold|bakeoff")
 
 
 def _model_eq(a: str | None, b: str | None) -> bool:
@@ -65,11 +70,19 @@ def derive(corpus, today: date | None = None) -> tuple[list, list]:
     modes = policy["modes"]
     # A call made before its mode's current clearance date ran under an EARLIER
     # policy. Judging it against today's allowlist reports a re-clearance as drift.
+    # A clearance with only a DATE cannot say what hour it took effect, so its own day
+    # is a transition day: off-policy calls on it are not evidence of drift. (The dial
+    # modes swapped models at ~11:00 UTC on their clearance day; every "drift" call
+    # the first version reported came from that morning.)
     pairs = defaultdict(list)
     pre_clearance = Counter()
+    bench = Counter()
     for e in calls:
+        if BENCH_CALLER.search(e.actor or "") or BENCH_CALLER.search(e.session or ""):
+            bench[(e.surface, e.model)] += 1
+            continue
         vd = (modes.get(e.surface) or {}).get("verified_date")
-        if vd and e.ts.date() < date.fromisoformat(vd) and not _model_eq(e.model, modes[e.surface].get("model")):
+        if vd and e.ts.date() <= date.fromisoformat(vd) and not _model_eq(e.model, modes[e.surface].get("model")):
             pre_clearance[(e.surface, e.model)] += 1
             continue
         pairs[(e.surface, e.model)].append(e)
@@ -238,8 +251,8 @@ def derive(corpus, today: date | None = None) -> tuple[list, list]:
             off = [r for r in rows if not r["on_allowlist"]]
             c = Candidate(
                 kind="route", key="unattributed",
-                title=f"{total:,} billed requests on {len(rows)} models never passed through the router "
-                      f"({len(off)} of those models are on no allowlist)",
+                title=f"{total:,} billed requests on {len(rows)} model{'s' if len(rows) != 1 else ''} never passed "
+                      f"through the router ({len(off)} of them on no allowlist)",
                 claim=f"${usd:.2f} billed on days the calls log was running, with no mode, caller or policy check "
                       "recorded. This is the traffic an allowlist cannot see.",
                 tier=tiers.RECURRING, direction=TIGHTEN, sources=["openrouter"],
@@ -258,8 +271,17 @@ def derive(corpus, today: date | None = None) -> tuple[list, list]:
                     title=f"`{mode}` ran {n:,} requests on `{model}` before its current clearance date",
                     claim="judged against the policy in force at the time, not today's; not drift.",
                     tier="history", sources=["openrouter"], numbers={"calls": n})
-                withheld_c.gate("current-policy", False, "these calls predate the mode's verified_date")
+                withheld_c.gate("current-policy", False, "these calls predate the mode's clearance, "
+                                                         "or fall on its (hour-less) clearance day")
                 withheld.append(withheld_c)
+    for (mode, model), n in bench.most_common():
+        if n >= MIN_CALLS:
+            b = Candidate(kind="route", key=f"bench|{mode}|{model}",
+                          title=f"`{mode}` on `{model}`: {n:,} requests from benchmark/eval callers",
+                          claim="experiment traffic; excluded from drift and reliability findings.",
+                          tier="history", sources=["openrouter"], numbers={"calls": n})
+            b.gate("production-traffic", False, "caller is a benchmark or eval")
+            withheld.append(b)
     return out, withheld
 
 

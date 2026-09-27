@@ -55,10 +55,13 @@ def surface_family(ev) -> str:
 
 
 def candidate_pattern(shape: str) -> str | None:
+    """The shape keys on basenames (`python3 page-digest.py`), but agents type paths
+    (`python3 scripts/page-digest.py`), so every token may carry a directory prefix.
+    The first version required adjacent tokens and matched none of its own failures."""
     toks = [t for t in shape.split(" ") if t]
     if not toks:
         return None
-    return r"(?:^|[;&|(]\s*|\s)" + r"\s+".join(re.escape(t) for t in toks) + r"\b"
+    return r"(?:^|[;&|(]\s*|\s|/)" + r"\s+".join(r"(?:\S*/)?" + re.escape(t) for t in toks) + r"(?![\w.-])"
 
 
 def replay(pattern: str, events, surface: str = "shell", literals=()) -> dict:
@@ -150,6 +153,11 @@ def derive(corpus, min_fails: int = MIN_FAILS, min_sessions: int = MIN_SESSIONS,
             coll = rp["matched_ok"] / rp["matched"] if rp["matched"] else 0.0
             c.numbers["replay"] = {k: v for k, v in rp.items() if not k.endswith("samples")}
             c.preservation = [_sample(e) for e in rp["ok_samples"]]
+            # AutoRefine's closure check, offline: a rule must catch the failures it was
+            # derived from. Zero matches used to pass the collateral gate (0 of 0).
+            c.gate("replay-covers-correction", rp["matched_fail"] >= 0.5 * len(fails),
+                   f"pattern matches {rp['matched_fail']} of the {len(fails)} failures it was derived from",
+                   suppressed="replay-covers-correction" in suppress)
             c.gate("replay-collateral", coll <= MAX_COLLATERAL,
                    f"pattern matches {rp['matched']} recorded attempts; {rp['matched_ok']} of them succeeded "
                    f"({coll:.0%} collateral)", suppressed="replay-collateral" in suppress)
@@ -168,7 +176,12 @@ def derive(corpus, min_fails: int = MIN_FAILS, min_sessions: int = MIN_SESSIONS,
                          "sample_command": fails[0].text[:200]},
             }}
         else:
-            c.gate("replay-collateral", True, "tool-surface constraint: every attempt of the surface is in scope")
+            coll = shape_ok[(surface, shape)] / n_att if n_att else 0.0
+            c.gate("replay-collateral", True, f"tool-surface constraint: fires on every call of the surface; "
+                                               f"{coll:.0%} of those succeed")
+            if coll > NARROW_ABOVE:
+                c.caveats.append(f"needs a narrower pattern before arming: {coll:.0%} of calls to this tool "
+                                 "succeed, so a tool-wide rule would fire mostly on working calls")
             c.proposal = {"ruleset_rule": {
                 "id": c.id, "tool": shape or surface, "action": "monitor", "severity": 60,
                 "message": f"DRAFT — tool surface `{shape}` keeps failing ({redact(sig, 120)}).",
@@ -214,3 +227,27 @@ def replay_ruleset(rules: list, corpus) -> list:
                     "hosts": rp["hosts"], "tier_now": tier,
                     "over_ceiling": not tiers.within_ceiling(action, tier) and rp["matched"] > 0})
     return out
+
+
+def covered_by(cand: dict, rules: list) -> str | None:
+    """The id of an existing rule that already covers this candidate, or None.
+
+    A tool-surface candidate is covered by any rule on that tool surface. A shell
+    candidate is covered when an existing rule's patterns match most of the failures
+    the candidate was derived from — the same test the replay gate uses."""
+    tool = cand.get("proposal", {}).get("ruleset_rule", {}).get("tool", "")
+    samples = [s.get("text", "") for s in cand.get("correction", []) if s.get("text")]
+    for r in rules:
+        rt = r.get("tool") or ""
+        if tool != "Bash" and rt and (rt == tool or (rt.endswith("*") and tool.startswith(rt[:-1]))
+                                      or (tool.endswith("*") and rt.startswith(tool[:-1]))):
+            return r.get("id")
+        if tool == "Bash" and samples and rt in ("Bash", ""):
+            pats = r.get("any") or ([r["pattern"]] if r.get("pattern") else [])
+            try:
+                hit = sum(1 for t in samples if any(re.search(p, t) for p in pats))
+            except re.error:
+                continue
+            if hit and hit >= len(samples) / 2:
+                return r.get("id")
+    return None
