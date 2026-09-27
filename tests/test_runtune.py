@@ -463,3 +463,61 @@ class StandaloneHook(unittest.TestCase):
         self.assertEqual(len(evs), 1)                    # the backgrounded call is not a success
         self.assertFalse(evs[0]["ok"])
         self.assertEqual(evs[0]["model"], "gpt-5.6")
+
+
+class Channels(unittest.TestCase):
+    def _run(self, root):
+        from runtune.derive import capabilities as cap
+        ws = Workspace(os.path.join(root, ".runtune"))
+        got, _ = constraints.derive(fx.failing_psql())
+        caps, _ = cap.derive_inline(fx.inline_ttt())
+        run = {"run_id": "r1", "candidates": [c.to_dict() for c in got + caps], "withheld": []}
+        ws.save_run(run)
+        return ws, run
+
+    def test_local_default_and_terminal_reply(self):
+        from runtune import notify
+        from runtune.notify import digest
+        os.environ["RUNTUNE_NO_DESKTOP"] = "1"
+        with tempfile.TemporaryDirectory() as root:
+            ws, run = self._run(root)
+            st = notify.send(ws, digest.compose(ws, run, []), png=False)
+            self.assertEqual([d["type"] for d in st["deliveries"]], ["local"])
+            self.assertTrue(os.path.exists(os.path.join(ws.root, "inbox", "latest.md")))
+            rec = st["deliveries"][0]
+            self.assertEqual(notify.handle(ws, st, rec, "the first one", "kai", root)["status"], "ambiguous")
+            res = notify.handle(ws, st, rec, "1", "kai", root)
+            self.assertEqual(res["applied"], [1])
+            self.assertEqual(st["status"], "executed")
+
+    def test_plugin_channel_and_one_broken_channel(self):
+        from runtune import notify
+        from runtune.notify import channels, digest
+        import types, sys as _sys
+        mod = types.ModuleType("rt_test_plugin")
+        sent = []
+
+        class Pager:
+            def __init__(self, **opts):
+                self.opts = opts
+            def send(self, d, text, png):
+                sent.append(text)
+                return {"page_id": "p1"}
+            def replies(self, rec):
+                return ["none"]
+            def answer(self, rec, text):
+                sent.append("answer:" + text)
+        mod.Pager = Pager
+        _sys.modules["rt_test_plugin"] = mod
+        with tempfile.TemporaryDirectory() as root:
+            ws, run = self._run(root)
+            channels.save_config(ws.root, [{"type": "plugin", "module": "rt_test_plugin:Pager", "team": "x"},
+                                           {"type": "slack", "user": "U1", "token_env": "RT_NO_SUCH_TOKEN"}])
+            st = notify.send(ws, digest.compose(ws, run, []), png=False)
+            ok = {d["type"]: d["ok"] for d in st["deliveries"]}
+            self.assertEqual(ok, {"plugin": True, "slack": False})   # slack has no token; plugin still delivered
+            self.assertEqual(st["status"], "awaiting_reply")
+            (rec, text), = notify.poll(ws, st)
+            res = notify.handle(ws, st, rec, text, "kai", root)
+            self.assertEqual(res["applied"], [])
+            self.assertTrue(any(s.startswith("answer:Declined") for s in sent))

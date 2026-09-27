@@ -64,14 +64,15 @@ pip install -e .                    # zero dependencies; '.[postgres]' adds ware
 runtune install                     # prints the hook wiring for Claude Code and Codex
 
 runtune scan                        # what the evidence covers, and where it has holes
-runtune derive                      # proposals, each with its evidence and gates
-runtune notify --channel slack      # ONE digest: a card image + numbered proposals
-runtune inbox                       # reads your reply ("1,3", "all except 2", "none") and applies
+runtune notify                      # ONE digest: a card + numbered proposals (local by default)
+runtune show --open                 # read it
+runtune reply 1,3                   # approve 1 and 3; the rest are snoozed for 28 days
 runtune review                      # keep · review · probe · retire · revalidate
+runtune schedule --install          # weekly digest + hourly inbox, on this machine
 ```
 
-The same actions are available directly: `runtune stage <id>`, `runtune apply <id> --approve
-kai`, and `runtune retire <id> --approve kai --reason …`.
+The same actions are available directly: `runtune derive`, `runtune stage <id>`,
+`runtune apply <id> --approve kai`, and `runtune retire <id> --approve kai --reason …`.
 
 ## It runs on its own
 
@@ -92,37 +93,57 @@ files (2,412 against about 2,500 settled calls).
 
 ## How suggestions reach you
 
-Nothing is applied automatically, and nothing waits in a file for you to find.
+Nothing is applied automatically. Out of the box it is all local, with no accounts and no
+network:
 
-1. **Weekly, `runtune notify`** derives and reviews, then sends one digest. It is a card image
-   in the style of a weekly client report: a status chip, three tiles, and the adopted
-   artifacts' measured effect as bars. A numbered list of up to 8 proposals comes with it. It goes
-   to a **Slack DM**, to **email** (Gmail API thread or SMTP), or to stdout.
-2. **You reply with numbers.** `runtune inbox`, run hourly and free when idle, reads replies
-   from the approver only and acts on them:
-   - `1,3` · `all` · `all except 2` · `none` are carried out.
-   - Anything else ("all but number three", "the first two") gets a clarifying question in the
-     thread, never a guess.
-   - Declined items are snoozed for 28 days.
-3. **Some items can't be approved by reply.** A widening (a looser rule, a broader grant, a model
-   admitted to a mode) must be applied from a terminal with `--reason`, and `--eval` for routes.
-   A constraint whose own replay shows it would mostly fire on working calls goes on a "needs a
-   person to narrow it" line. A proposal already covered by a rule in force is not offered at
-   all.
-4. **`review` feeds the next digest.** An adopted artifact that made things worse, went quiet, or
-   predates a model change comes back flagged.
+1. **`runtune notify`** derives and reviews, then writes one digest to `.runtune/inbox/`:
+   `latest.md` and a card image in the style of a weekly client report. It also pops a desktop
+   notification (macOS Notification Center, or `notify-send` on Linux).
+2. **`runtune show --open`** prints the digest and opens the card.
+3. **`runtune reply 1,3`** approves items 1 and 3. `all`, `all except 2` and `none` work too.
+   Anything else ("all but number three", "the first two") gets a question back, never a guess.
+   Declined items are snoozed for 28 days.
+4. **`runtune schedule --install`** makes it run by itself: a launchd job on macOS, or it prints
+   cron lines on Linux. The digest goes out Monday 09:00, and replies from remote channels are
+   checked every hour.
 
-| channel | env |
+Some items can't be approved by reply on any channel:
+
+- A widening (a looser rule, a broader grant, a model admitted to a mode) is applied from a
+  terminal with `--reason`, and with `--eval` for routes.
+- A constraint whose own replay shows it would mostly fire on working calls is listed as
+  needing a person to narrow it.
+- A proposal already covered by a rule in force is not offered.
+- A code fix (no artifact to write) is recorded as acknowledged.
+
+### Channels are extensions
+
+Add any number; the digest goes to all of them. The first valid answer from any channel is
+acted on, and the other channels are told it was handled, so nothing can be applied twice.
+
+```bash
+runtune channels add slack  --opt user=U0123 --opt token_env=RUNTUNE_SLACK_TOKEN   # DM + card; reply in thread
+runtune channels add email  --opt to=me@example.com       # Gmail API thread (reply loop) or SMTP (send only)
+runtune channels add plugin --opt module=mypkg.teams:TeamsChannel                  # your own
+runtune channels test                                     # sends a test through each
+runtune channels                                          # list
+```
+
+The config (`.runtune/channels.json`) stores environment-variable names, never credentials,
+and `channels add` refuses a value that looks like a token. A plugin is any class with
+`send(digest, text, png)`, `replies(delivery)` and `answer(delivery, text)`.
+`RUNTUNE_DRY_RUN=1` refuses every remote send.
+
+| channel | needs |
 |---|---|
-| Slack DM | `RUNTUNE_SLACK_TOKEN` (bot: chat:write, im:write, im:history, files:write), `RUNTUNE_SLACK_USER` |
-| email | `RUNTUNE_GMAIL_TOKEN` (an authorized-user token file) or `RUNTUNE_SMTP_*`; `RUNTUNE_EMAIL_TO` |
-| approver | `RUNTUNE_APPROVER`: the name written on every apply |
-
-`RUNTUNE_DRY_RUN=1` refuses every send.
+| local | nothing |
+| slack | a bot token with chat:write, im:write, im:history, files:write |
+| email | `RUNTUNE_GMAIL_TOKEN` (an authorized-user token file) for the reply loop, or `RUNTUNE_SMTP_*` to send only |
 
 ## As an agent on a VM (optional)
 
-`deploy/fly/` runs the loop unattended on one small Fly machine:
+Not needed: `runtune schedule` runs the same loop on your own machine. When you want it to
+run while the laptop is closed, `deploy/fly/` runs it unattended on one small Fly machine:
 
 - **Weekly:** derive + review + digest.
 - **Hourly:** inbox.

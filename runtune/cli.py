@@ -10,6 +10,14 @@
     runtune replay    replay an existing guard ruleset over history, both hosts
     runtune routes    the approved-vs-ran-vs-billed traffic table
     runtune agents    per-agent-type census and verified token ratios
+    runtune notify    derive + review, then ONE digest to every configured channel (local by default)
+    runtune show      print the latest digest; --open its card
+    runtune reply     answer a digest from the terminal: runtune reply 1,3
+    runtune inbox     poll remote channels (Slack, email, plugins) for a reply and act on it
+    runtune channels  list / add / remove / test notification channels
+    runtune schedule  print or --install the weekly digest + hourly inbox (launchd / cron)
+    runtune record    codex (rollout files) | openrouter (daily bill)
+    runtune install   print the hook wiring for Claude Code and Codex
     runtune ledger    verify the hash chain
 """
 
@@ -259,40 +267,162 @@ def cmd_notify(a):
     ws = Workspace(a.workspace)
     run, rows = _run_for_digest(a, ws)
     d = digest.compose(ws, run, rows, a.limit, a.target_root)
-    st = notify.send(ws, d, a.channel, png=not a.no_png)
-    print(f"digest {st['digest_id']} via {a.channel}: {len(d['items'])} proposals, status {st['status']}",
-          file=sys.stderr)
-    return 0
+    st = notify.send(ws, d, only=a.channel, png=not a.no_png)
+    for r in st["deliveries"]:
+        print(f"  {r['type']:<7} {'sent' if r['ok'] else 'FAILED: ' + r.get('error', '')}", file=sys.stderr)
+    print(f"digest {st['digest_id']}: {len(d['items'])} proposals, status {st['status']}", file=sys.stderr)
+    if a.print:
+        print(digest.to_text(d))
+    return 0 if st["status"] != "undelivered" else 1
+
+
+def _approver(a):
+    return a.approver or os.environ.get("RUNTUNE_APPROVER") or os.environ.get("USER")
+
+
+def _after_done(a, st, res):
+    if getattr(a, "git", False) and res.get("applied"):
+        from . import gitops
+        print(gitops.publish(a.target_root, st["digest_id"], res["message"]))
 
 
 def cmd_inbox(a):
     from . import notify
     from .notify import digest
     ws = Workspace(a.workspace)
-    approver = a.approver or os.environ.get("RUNTUNE_APPROVER")
-    if not approver:
-        print("inbox needs --approver or $RUNTUNE_APPROVER (the name recorded on every apply)", file=sys.stderr)
-        return 2
     pending = digest.awaiting(ws)
     if not pending:
         print("no digest awaiting a reply")
         return 0
     for st in pending:
-        new = notify.replies(st)
-        if not new:
+        got = notify.poll(ws, st)
+        if not got:
             print(f"{st['digest_id']}: no reply yet ({len(st['items'])} items awaiting)")
-        for text in new:
-            res = digest.act(ws, st, text, approver, a.target_root)
-            notify.answer(st, res["message"])
-            print(f"{st['digest_id']}: {res['status']} — {res['message']}")
+        for rec, text in got:
+            res = notify.handle(ws, st, rec, text, _approver(a), a.target_root)
+            print(f"{st['digest_id']} via {rec['type']}: {res['status']} — {res['message']}")
             if res["status"] == "done":
-                st["status"] = "executed"
-                st["result"] = res
-                if a.git and res.get("applied"):
-                    from . import gitops
-                    print(gitops.publish(a.target_root, st["digest_id"], res["message"]))
+                _after_done(a, st, res)
                 break
         digest.save(ws, st)
+    return 0
+
+
+def cmd_reply(a):
+    """Answer the latest digest from the terminal — the local channel's reply path."""
+    from . import notify
+    from .notify import digest
+    ws = Workspace(a.workspace)
+    pending = [s for s in digest.awaiting(ws) if not a.digest or s["digest_id"] == a.digest]
+    if not pending:
+        print("no digest awaiting a reply")
+        return 1
+    st = pending[-1]
+    rec = next((r for r in st.get("deliveries", []) if r["type"] == "local"), None)
+    if rec is None:
+        rec = {"type": "local", "entry": {"type": "local", "desktop": False}, "ok": True}
+        st.setdefault("deliveries", []).append(rec)
+    res = notify.handle(ws, st, rec, " ".join(a.text), _approver(a), a.target_root)
+    if res["status"] == "done":
+        _after_done(a, st, res)
+    digest.save(ws, st)
+    return 0 if res["status"] == "done" else 2
+
+
+def cmd_show(a):
+    from .notify import digest
+    ws = Workspace(a.workspace)
+    states = [s for s in (digest.awaiting(ws) or [])]
+    md = os.path.join(ws.root, "inbox", "latest.md")
+    if not os.path.exists(md):
+        print("no digest yet — run `runtune notify`")
+        return 1
+    print(open(md).read())
+    png = os.path.join(ws.root, "inbox", "latest.png")
+    if states:
+        print(f"awaiting: {', '.join(s['digest_id'] for s in states)} — answer with `runtune reply 1,3`")
+    if a.open and os.path.exists(png):
+        import subprocess
+        subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", png], check=False)
+    return 0
+
+
+def cmd_channels(a):
+    from .notify import channels
+    ws = Workspace(a.workspace)
+    chans = channels.load_config(ws.root)
+    if a.action == "add":
+        entry = {"type": a.type}
+        for kv in a.opt or []:
+            k, _, v = kv.partition("=")
+            entry[k] = v
+        if a.type == "slack" and "user" not in entry:
+            print("slack needs --opt user=U0123 (and optionally token_env=NAME)", file=sys.stderr)
+            return 2
+        if a.type == "plugin" and "module" not in entry:
+            print("plugin needs --opt module=package.module:ClassName", file=sys.stderr)
+            return 2
+        if any(v and len(v) > 40 and k.endswith(("token", "key", "secret")) for k, v in entry.items()):
+            print("refusing: store the NAME of an env var (token_env=...), never a credential", file=sys.stderr)
+            return 2
+        chans = [c for c in chans if c.get("type") != a.type or a.type == "plugin"] + [entry]
+        channels.save_config(ws.root, chans)
+    elif a.action == "remove":
+        chans = [c for c in chans if c.get("type") != a.type]
+        channels.save_config(ws.root, chans or [{"type": "local"}])
+    elif a.action == "test":
+        d = {"title": "RunTune — channel test", "subtitle": "", "chip": ("TEST", "#898781", "○"),
+             "tiles": [], "bars": [], "items": [], "review": [], "footer": "No action needed."}
+        for e in chans:
+            try:
+                channels.build(e, ws.root).send(d, "RunTune channel test — no action needed.", None)
+                print(f"  {e['type']:<7} ok")
+            except Exception as exc:  # noqa: BLE001
+                print(f"  {e['type']:<7} FAILED: {type(exc).__name__}: {exc}")
+        return 0
+    for c in channels.load_config(ws.root):
+        print(json.dumps(c))
+    return 0
+
+
+def cmd_schedule(a):
+    """The local scheduler: weekly digest, hourly inbox. Prints by default; --install writes it."""
+    ws_abs = os.path.abspath(a.workspace)
+    cwd = os.path.dirname(ws_abs)
+    py = sys.executable
+    extra = " ".join(a.extra or [])
+    jobs = {"notify": (f"{py} -m runtune notify {extra}".strip(), {"Weekday": 1, "Hour": 9, "Minute": 0}),
+            "inbox": (f"{py} -m runtune inbox --target-root {a.target_root}", {"Minute": 7})}
+    if sys.platform == "darwin":
+        for name, (cmd, when) in jobs.items():
+            label = f"com.runtune.{name}"
+            cal = "".join(f"<key>{k}</key><integer>{v}</integer>" for k, v in when.items())
+            plist = f"""<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>{label}</string>
+<key>ProgramArguments</key><array><string>/bin/sh</string><string>-c</string><string>cd {cwd} && {cmd}</string></array>
+<key>StartCalendarInterval</key><dict>{cal}</dict>
+<key>StandardOutPath</key><string>{ws_abs}/{name}.log</string>
+<key>StandardErrorPath</key><string>{ws_abs}/{name}.log</string>
+</dict></plist>
+"""
+            path = os.path.expanduser(f"~/Library/LaunchAgents/{label}.plist")
+            if a.install:
+                with open(path, "w") as f:
+                    f.write(plist)
+                import subprocess
+                subprocess.run(["launchctl", "unload", path], capture_output=True)
+                subprocess.run(["launchctl", "load", path], check=False)
+                print(f"installed {path}")
+            else:
+                print(f"# {path}\n{plist}")
+    else:
+        lines = [f"0 9 * * 1 cd {cwd} && {jobs['notify'][0]} >> {ws_abs}/notify.log 2>&1",
+                 f"7 * * * * cd {cwd} && {jobs['inbox'][0]} >> {ws_abs}/inbox.log 2>&1"]
+        print("# add with `crontab -e`:\n" + "\n".join(lines))
+    if not a.install:
+        print("# re-run with --install to write and load these (macOS launchd)")
     return 0
 
 
@@ -350,19 +480,41 @@ def main(argv=None) -> int:
     p.add_argument("what", choices=["codex", "openrouter"])
     p.add_argument("--root", help="Codex sessions dir (default ~/.codex/sessions)")
     sub.add_parser("install", help="print the hook wiring for Claude Code and Codex")
-    p = sub.add_parser("notify", help="derive + review, then send ONE digest")
+    p = sub.add_parser("notify", help="derive + review, then send ONE digest to every configured channel")
     _common(p)
-    p.add_argument("--channel", choices=["stdout", "slack", "email"], default="stdout")
+    p.add_argument("--channel", action="append", help="only these channel types (default: channels.json, "
+                                                         "which defaults to local)")
     p.add_argument("--agents-dir")
     p.add_argument("--limit", type=int, default=8)
     p.add_argument("--target-root", default=".", help="where approved artifacts will be applied; "
                                                         "its live rules are checked so nothing is re-proposed")
     p.add_argument("--no-png", action="store_true")
-    p = sub.add_parser("inbox", help="read approvals replied to a digest and apply them")
+    p.add_argument("--print", action="store_true", help="also print the digest text")
+    p = sub.add_parser("inbox", help="poll every channel for a reply to a digest and act on it")
     p.add_argument("--workspace", default=".runtune")
     p.add_argument("--approver")
     p.add_argument("--target-root", default=".")
     p.add_argument("--git", action="store_true", help="commit applied changes on a branch and open a PR")
+    p = sub.add_parser("reply", help='answer the latest digest from the terminal: runtune reply 1,3')
+    p.add_argument("text", nargs="+")
+    p.add_argument("--workspace", default=".runtune")
+    p.add_argument("--digest")
+    p.add_argument("--approver")
+    p.add_argument("--target-root", default=".")
+    p.add_argument("--git", action="store_true")
+    p = sub.add_parser("show", help="print the latest digest (and --open its card)")
+    p.add_argument("--workspace", default=".runtune")
+    p.add_argument("--open", action="store_true")
+    p = sub.add_parser("channels", help="list / add / remove / test notification channels")
+    p.add_argument("action", nargs="?", default="list", choices=["list", "add", "remove", "test"])
+    p.add_argument("type", nargs="?", choices=["local", "slack", "email", "plugin"])
+    p.add_argument("--opt", action="append", help="key=value, e.g. user=U0123, token_env=NAME, to=me@x.com")
+    p.add_argument("--workspace", default=".runtune")
+    p = sub.add_parser("schedule", help="print (or --install) the weekly digest + hourly inbox jobs")
+    p.add_argument("--workspace", default=".runtune")
+    p.add_argument("--target-root", default=".")
+    p.add_argument("--install", action="store_true")
+    p.add_argument("extra", nargs="*", help="extra args for the weekly notify (after --)")
     p = sub.add_parser("ledger")
     p.add_argument("--workspace", default=".runtune")
     a = ap.parse_args(argv)
