@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runtune"
+version = "0.1.0"
+description = "Agents should get better from their runs: telemetry -> reviewed capabilities and constraints, measured and retired."
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+authors = [{ name = "Kai Karlstrom" }]
+dependencies = []
+
+[project.optional-dependencies]
+postgres = ["psycopg[binary]>=3.1"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+runtune = "runtune.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["runtune*"]

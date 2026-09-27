@@ -1,0 +1,17 @@
+RunTune
+Copyright (C) 2026 Kai Karlstrom
+
+This product includes ideas and ported code from:
+
+  callusguard — Copyright (C) 2026 Kai Karlstrom, Apache-2.0.
+    Failure tiers and action ceilings, command-shape clustering, the rule
+    lifecycle, and the hash-chained audit log were ported from it.
+
+  autoharness — Copyright (c) 2026 ryan (Tigerless Labs), MIT License.
+    Design ideas only (proposer/promoter split, content-addressed evidence,
+    ownership sidecars, use-rate against opportunity). No source was copied.
+
+  AutoRefine — Qiu et al., "AutoRefine", arXiv:2601.22758.
+    Design ideas only (typed artifact compile order, correction/preservation
+    evidence, replay gate, inherited cases, declared lineage). The reference
+    repository ships without a license file; no source was copied.
