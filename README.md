@@ -83,6 +83,29 @@ To keep it running, `runtune install` wires the recording hook into Claude Code 
 `runtune schedule --install` sends a weekly digest. Slack, email and a VM are optional
 ([channels](docs/CHANNELS.md)).
 
+## From local loop to continuous operation
+
+RunTune can stay on your laptop, or run continuously around a deployed agent system. On a small
+VM it collects evidence daily and derives and reviews weekly. It sends each digest to Slack or
+email, and every hour it checks for a decision. The first valid answer on any channel wins, and
+the other channels are told it was handled. An approved change becomes a branch and a pull
+request against the agent's harness, and measurement starts only once that change is merged.
+
+```
+AGENT RUNS
+    ↓
+ EVIDENCE
+    ↓
+ RUNTUNE ─────→ Slack / email
+    ↑                ↓
+    │          human decision
+    │                ↓
+    └── future runs ← merge ← PR ← approved change
+```
+
+RunTune needs permission to open a pull request, not to change what is deployed. Git remains
+the deployment boundary. [Channels and deployment →](docs/CHANNELS.md)
+
 ## What it can change
 
 | from | artifact | what it writes |
@@ -98,8 +121,14 @@ rejected.
 
 ## Why it can't run away
 
-- **It proposes; it never applies on its own.** Every change needs a named approver, and there
-  is no code path from analysis to a target file.
+- **There is one write boundary.** The promoter is the only RunTune component that changes the
+  harness. Derivers, measurement and notifications can propose changes but have no code path
+  to apply them; a test enforces that only the two approval paths (the `apply` command and a
+  parsed human reply) can reach the promoter. This is an architectural separation, not an
+  instruction to a model.
+- **The learner doesn't need the agent's authority.** It observes through read-only sources
+  (transcripts, a SELECT-only database role, the provider's bill) and sends every change
+  through a separate approval and promotion path.
 - **It can't widen its own boundaries.** Loosening a rule, broadening a tool grant, or admitting
   a model needs a written reason, and for models a passing eval. None of these can be approved
   with a one-word reply.

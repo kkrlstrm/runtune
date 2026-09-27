@@ -31,6 +31,17 @@ def review(ws, corpus, days: int = 28) -> list[dict]:
     eps = measure.epochs(corpus)
     out = []
     for art in ws.artifacts("active"):
+        if art.get("pending_merge"):
+            if not _live(art):
+                out.append({"id": art["id"], "kind": art["kind"], "title": art["title"],
+                            "applied_at": art["applied_at"], "verdict": "pending",
+                            "detail": {"why": "approved, pull request not merged yet", "pr": art["pending_merge"]}})
+                continue
+            # merged: measurement starts when the change became live, not when it was approved
+            art["merged_seen_at"] = datetime.now(timezone.utc).isoformat()
+            art["applied_at"] = art["merged_seen_at"]
+            art.pop("pending_merge")
+            ws.put(art)
         at = datetime.fromisoformat(art["applied_at"])
         verdict, detail = _judge(art, corpus, at, days)
         evidence_end = art["candidate"].get("numbers", {}).get("last") or art.get("staged_at")
@@ -44,6 +55,24 @@ def review(ws, corpus, days: int = 28) -> list[dict]:
         out.append({"id": art["id"], "kind": art["kind"], "title": art["title"],
                     "applied_at": art["applied_at"], "verdict": verdict, "detail": detail})
     return out
+
+
+def _live(art) -> bool:
+    """Is the approved change present in the target as it is now (after a git pull)?"""
+    import json
+    import os
+    t = art["target"]
+    if art["kind"] == "constraint":
+        try:
+            data = json.load(open(t))
+        except (OSError, ValueError):
+            return False
+        rules = data.get("rules", data) if isinstance(data, dict) else data
+        return any((r.get("meta") or {}).get("runtune-artifact") == art["id"] for r in rules)
+    if os.path.isdir(t):
+        side = os.path.join(t, ".runtune.json")
+        return os.path.exists(side) and art["id"] in open(side).read()
+    return os.path.exists(t) and art["id"] in open(t).read()
 
 
 def _week(iso: str) -> str:

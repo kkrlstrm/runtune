@@ -287,7 +287,16 @@ def _approver(a):
 def _after_done(a, st, res):
     if getattr(a, "git", False) and res.get("applied"):
         from . import gitops
-        print(gitops.publish(a.target_root, st["digest_id"], res["message"]))
+        url = gitops.publish(a.target_root, st["digest_id"], res["message"])
+        print(url)
+        # On a branch, not yet live: review must not measure a change nobody merged.
+        ws = Workspace(a.workspace)
+        ids = {i["n"]: i["id"] for i in st["items"]}
+        for n in res["applied"]:
+            art = ws.get(ids[n])
+            if art:
+                art["pending_merge"] = url
+                ws.put(art)
 
 
 def cmd_inbox(a):

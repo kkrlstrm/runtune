@@ -557,3 +557,37 @@ class ClaudeBackfill(unittest.TestCase):
             self.assertEqual(evs[0]["actor"], "web-researcher")
             self.assertNotIn("u:p@h", evs[0]["text"])
             self.assertEqual((inv["tokens_out"], inv["tokens_reread"]), (10, 900))
+
+
+class Architecture(unittest.TestCase):
+    """One write boundary: only the promoter changes the harness, and only approval reaches it."""
+
+    def test_only_approval_paths_import_the_promoter(self):
+        import pathlib
+        root = pathlib.Path(__file__).resolve().parent.parent / "runtune"
+        importers = sorted(str(p.relative_to(root)) for p in root.rglob("*.py")
+                           if p.name != "promoter.py" and re.search(r"^\s*(from|import)\s.*\bpromoter\b",
+                                                                  p.read_text(), re.M))
+        # cli: `apply` / `retire` / `stage` with a named approver; notify/digest: a parsed human reply
+        self.assertEqual(importers, ["cli.py", "notify/digest.py"])
+
+    def test_git_mode_measures_only_after_merge(self):
+        from runtune.lifecycle import review
+        with tempfile.TemporaryDirectory() as root:
+            ws = Workspace(os.path.join(root, ".runtune"))
+            got, _ = constraints.derive(fx.failing_psql())
+            ws.save_run({"run_id": "r1", "candidates": [c.to_dict() for c in got], "withheld": []})
+            cid = got[0].id
+            promoter.stage(ws, cid, root)
+            art = promoter.apply(ws, cid, "alice")
+            target = art["target"]
+            saved = open(target).read()
+            os.remove(target)                                     # the PR branch is not merged: not in the target
+            art["pending_merge"] = "https://example/pr/1"
+            ws.put(art)
+            rows = review.review(ws, fx.failing_psql())
+            self.assertEqual(rows[0]["verdict"], "pending")
+            open(target, "w").write(saved)                        # merged and pulled
+            rows = review.review(ws, fx.failing_psql())
+            self.assertNotIn("pending_merge", ws.get(cid))
+            self.assertTrue(ws.get(cid).get("merged_seen_at"))

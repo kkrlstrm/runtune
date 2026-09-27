@@ -30,6 +30,9 @@ def publish(root: str, digest_id: str, body: str) -> str:
          f"RunTune: apply approvals from digest {digest_id}\n\n{body}")
     _git(root, "push", "-u", "origin", branch)
     _git(root, "checkout", base)
+    # The clone stays on the base branch, without the change: the target only
+    # contains it once the PR is merged and pulled, which is what review checks.
+    _git(root, "branch", "-D", branch)
     repo, token = os.environ.get("RUNTUNE_GIT_REPO"), os.environ.get("RUNTUNE_GIT_TOKEN")
     if not (repo and token):
         return f"pushed {branch}; set RUNTUNE_GIT_REPO and RUNTUNE_GIT_TOKEN to open the PR automatically"

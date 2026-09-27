@@ -62,6 +62,15 @@ On a VM the targets live in a git repo, so `inbox --git` applies approvals into 
 commits them on a branch and opens a pull request. Merging is the final approval, and
 `git revert` is the undo.
 
+An approved change is not treated as live until it is merged. Review reports it as `pending`
+("pull request not merged yet"), and measurement starts on the day the change first appears in
+the target's pulled main branch. That way a change nobody merged can't be credited or blamed
+for what happened after it was approved.
+
+Protect the target branch, so that RunTune's token can push branches and open pull requests
+but can't merge them. That makes "Git remains the deployment boundary" a setting, not a
+convention.
+
 Secrets are named one by one (`deploy/fly/set-secrets.py`), never a whole `.env`. Give it a
 SELECT-only database role: RunTune opens read-only sessions, but a read-only session is a
 setting, not a permission.
