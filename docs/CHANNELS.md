@@ -58,6 +58,12 @@ run while the laptop is closed, `deploy/fly/` runs it unattended on one small Fl
 - **Hourly:** inbox.
 - **Daily:** an OpenRouter bill snapshot.
 
+**Where the VM's evidence comes from.** Recording happens where the agents run, so a VM learns
+only from a shared telemetry database those recorders write to. Point `RUNTUNE_DB_URL` at it,
+using the columns in [WAREHOUSE.md](WAREHOUSE.md). Local `~/.runtune` recordings on a laptop are
+invisible to the VM. If you have no shared database yet, run RunTune locally with
+`runtune schedule`, which is the simpler setup anyway.
+
 On a VM the targets live in a git repo, so `inbox --git` applies approvals into a clone,
 commits them on a branch and opens a pull request. Merging is the final approval, and
 `git revert` is the undo.
