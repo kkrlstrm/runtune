@@ -15,47 +15,31 @@ model-router runs into governed changes to the system around them.
 - **Change → measurement.** Every adopted change is measured against a control, then kept,
   reviewed, or retired.
 
-```
-RUN → OBSERVE → DERIVE → APPROVE → APPLY → MEASURE
- ↑                                             │
- └─────────────────────────────────────────────┘
-```
+**It tunes the harness, not the model.** RunTune doesn't teach an agent to remember yesterday.
+It changes tomorrow's runtime based on what happened yesterday.
 
-**It tunes the harness, not the model.** No weight training, and no autonomous
-self-modification. RunTune proposes evidence-backed changes, and a human decides what enters
-the runtime.
+No weight training, and no autonomous self-modification: RunTune proposes evidence-backed
+changes, and a human decides what enters the runtime.
 
-## The loop
+## The loop, and what it tunes
 
 ```
-                     agent runs
-                         ↓
-                 execution evidence
-                         ↓
-      ┌──────────────────┼──────────────────┐
-      │                  │                  │
-   success            failure             drift
-      │                  │                  │
-      ▼                  ▼                  ▼
-  capability         constraint           route
-      └──────────────────┬──────────────────┘
-                         ↓
-                      propose
-                         ↓
-                   human approval
-                         ↓
-                       apply
-                         ↓
-                      measure
-                         │
-                         └────────────────↺
+agent runs → execution evidence
+                    │
+     ┌──────────────┼──────────────┐
+  success        failure         drift
+     ▼              ▼              ▼
+ capability     constraint       route
+     └──────────────┼──────────────┘
+                    ▼
+    propose → human approval → apply → measure
+       ▲                                  │
+       └──────────── future runs ◄────────┘
 ```
-
-## It tunes the harness, not the model
 
 A coding agent is a model inside a harness: the skills it can load, the sub-agents it can spawn,
 the guards on its tools, and the routes its model calls take. The model is someone else's to
-train; the harness is yours to tune. RunTune tunes the harness from what actually ran.
+train; the harness is yours to tune.
 
 ```
                MODEL
@@ -72,27 +56,14 @@ train; the harness is yours to tune. RunTune tunes the harness from what actuall
             actual runs
 ```
 
-**RunTune doesn't teach an agent to remember yesterday. It changes tomorrow's runtime based on
-what happened yesterday.** That is the difference from agent memory: the next agent runs in a
-different environment, whether or not it recalls anything.
+This is the difference from agent memory: the next agent runs in a different environment,
+whether or not it recalls anything.
 
 ## Observability should close the loop
 
-Most agent observability ends at a dashboard:
-
-```
-runs → traces → dashboard → a person reads the dashboard
-```
-
-RunTune carries the traces forward into a change, and then checks the change:
-
-```
-runs → evidence → candidate change → admission gates → human approval
-     → artifact → future runs → measurement → keep · review · retire
-```
-
-Traces tell you what happened. RunTune asks what the runtime should learn from it, and whether
-the lesson worked.
+Most agent observability ends at a dashboard: runs → traces → a person reads the dashboard.
+Traces tell you what happened. RunTune asks what the runtime should learn from it, turns the
+answer into a gated, approved change, and then checks on future runs whether the change worked.
 
 ## Try it in 60 seconds
 
@@ -153,40 +124,33 @@ sub-agent runs. It found:
 - guard rules that helped, rules that stopped helping, and one that made failures worse until
   it was rewritten.
 
-**RunTune was wrong too.** Five of its recommendations changed once they were checked against
-production. Two apparent routing violations were a clearance-day transition and a benchmark.
-One "harmful" rule had already been fixed by its rewrite. A generated rule could never have
-fired, and a generated skill named a command path that didn't exist. Each mistake became a regression test, and the evidence doc keeps the wrong versions. A
-live three-arm experiment on one of its proposals came back inconclusive, and that result is
-published too.
+**RunTune was wrong too.** Five of its recommendations changed once checked against production:
+
+- two apparent routing violations were a clearance-day transition and a benchmark;
+- one "harmful" rule had already been fixed by its rewrite;
+- a generated rule could never have fired;
+- a generated skill named a command path that didn't exist.
+
+Each mistake became a regression test, and the evidence doc keeps the wrong versions. A live
+experiment on one proposal came back inconclusive, and that result is published too.
 
 [Read the evidence and methodology →](docs/EVIDENCE.md)
 
 ## How it works
 
-- **Record.** RunTune's own hook, or a backfill of Claude Code and Codex transcripts, plus the
-  model router's call log and the provider's bill.
-- **Derive.** Cluster attempts, grade each cluster against its denominator, and propose.
-- **Gate.** Check breadth, signal, replay collateral and observability. Everything withheld is
-  reported with its reason.
-- **Apply.** The promoter carries out only what a person approved, within the authority rules.
-- **Review.** Measure against a control, exclude recorder gaps per source, and flag anything
-  that predates a model change.
+Record → derive → gate → apply → review. Evidence comes from RunTune's own hook, a transcript
+backfill, the router's call log and the provider's bill. Every cluster is graded against its
+denominator, and anything withheld is reported with its reason. The promoter carries out only
+what a person approved, and review measures each change against a control.
 
 Details: [how it works](docs/HOW-IT-WORKS.md) · [channels and deployment](docs/CHANNELS.md) ·
 [warehouse sources](docs/WAREHOUSE.md) · [extending it](docs/EXTENDING.md).
 
 ## What this is not
 
-- **Not a sandbox.** Constraints are advisory to blocking hooks; for isolation use an OS
-  sandbox, and see CallusGuard's threat model.
-- **Not causal.** Every rate is observational, over traffic that happened to run. The control
-  makes before/after defensible, not experimental.
-- **Not a quality oracle for models.** OpenRouter `ok` means the request returned. A model
-  can be 100% ok and worst of five on quality. Route capabilities are always `eval required`.
-- **Not a skill writer.** The derivers are deterministic counters with templates: they find
-  what recurs and attach the evidence. The generalizing step is human, or a drafting model
-  whose output goes through the same promoter.
+**Not a sandbox.** Constraints run as tool-call hooks; for isolation, run agents inside an OS
+sandbox, and RunTune inside that. The measurement caveats (observational rates, `ok` is not
+quality, derivers are counters) are in [the evidence doc](docs/EVIDENCE.md#limits).
 
 ## Lineage
 
@@ -211,8 +175,7 @@ or left out.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). `python3 -m pytest tests -q` runs the governance
-invariants, derivers, measurement, hook, recorders and reply parsing.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Results from your own agents, null results included, are welcome.
 
 ## License
 
