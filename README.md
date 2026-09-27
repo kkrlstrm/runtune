@@ -79,15 +79,17 @@ runtune reply 1,3               # approve items 1 and 3; the rest are snoozed fo
 ```
 
 This uses only the transcripts already on your machine: no accounts, no database, no network.
-To keep it running, `runtune install` wires the recording hook into Claude Code and Codex, and
-`runtune schedule --install` sends a weekly digest. Slack, email and a VM are optional
-([channels](docs/CHANNELS.md)).
+To keep it running, `runtune install` prints the recording hook for Claude Code and Codex (you
+paste it, because RunTune never edits host settings), and `runtune schedule --install` sends a
+weekly digest.
 
 ## From local loop to continuous operation
 
 RunTune can stay on your laptop, or run continuously around a deployed agent system. On a small
-VM it collects evidence daily and derives and reviews weekly. It sends each digest to Slack or
-email, and every hour it checks for a decision. The first valid answer on any channel wins, and
+VM it reads evidence from a shared telemetry database that your agents' recorders write to
+([warehouse sources](docs/WAREHOUSE.md)), snapshots the model provider's bill daily, and derives
+and reviews weekly. It sends each digest to Slack or email, and every hour it checks for a
+decision. The first valid answer on any channel wins, and
 the other channels are told it was handled. An approved change becomes a branch and a pull
 request against the agent's harness, and measurement starts only once that change is merged.
 
@@ -126,9 +128,9 @@ rejected.
   to apply them; a test enforces that only the two approval paths (the `apply` command and a
   parsed human reply) can reach the promoter. This is an architectural separation, not an
   instruction to a model.
-- **The learner doesn't need the agent's authority.** It observes through read-only sources
-  (transcripts, a SELECT-only database role, the provider's bill) and sends every change
-  through a separate approval and promotion path.
+- **The learner doesn't need the agent's authority.** It only reads evidence: transcripts, the
+  provider's bill, and a database it opens in read-only sessions (give it a SELECT-only role).
+  Every change goes through a separate approval and promotion path.
 - **It can't widen its own boundaries.** Loosening a rule, broadening a tool grant, or admitting
   a model needs a written reason, and for models a passing eval. None of these can be approved
   with a one-word reply.
@@ -136,8 +138,8 @@ rejected.
   a block.
 - **It only edits what it wrote.** It never overwrites a file a person wrote, and it refuses a
   proposal whose target changed after the proposal was reviewed.
-- **It stays out of host settings.** It never writes hook wiring or `.git/`, and every decision
-  goes into a hash-chained ledger.
+- **It stays out of host settings.** The promoter refuses host settings, hook wiring and git
+  internals as targets, whoever approves. Every decision goes into a hash-chained ledger.
 - **Ambiguous answers get a question back.** "All but number three" is never read as "all".
 
 ## Evidence
