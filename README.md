@@ -6,6 +6,8 @@
 ![python](https://img.shields.io/badge/python-3.10%2B-blue) ![deps](https://img.shields.io/badge/core%20dependencies-0-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
+![RunTune's evidence-to-harness learning loop](docs/runtune-loop.svg)
+
 RunTune is a runtime learning loop for coding agents. It turns real Claude Code, Codex and
 model-router runs into governed changes to the system around them.
 
@@ -23,38 +25,9 @@ changes, and a human decides what enters the runtime.
 
 ## The loop, and what it tunes
 
-```
-agent runs → execution evidence
-                    │
-     ┌──────────────┼──────────────┐
-  success        failure         drift
-     ▼              ▼              ▼
- capability     constraint       route
-     └──────────────┼──────────────┘
-                    ▼
-    propose → human approval → apply → measure
-       ▲                                  │
-       └──────────── future runs ◄────────┘
-```
-
 A coding agent is a model inside a harness: the skills it can load, the sub-agents it can spawn,
 the guards on its tools, and the routes its model calls take. The model is someone else's to
 train; the harness is yours to tune.
-
-```
-               MODEL
-                 │
-         ┌───────┴────────┐
-         │    HARNESS     │
-         │  skills        │
-         │  sub-agents    │   ◄── RunTune proposes changes here
-         │  guards        │
-         │  routes        │
-         └────────────────┘
-                 ▲
-                 │
-            actual runs
-```
 
 This is the difference from agent memory: the next agent runs in a different environment,
 whether or not it recalls anything.
