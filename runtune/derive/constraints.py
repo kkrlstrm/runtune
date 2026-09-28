@@ -12,9 +12,10 @@ What it keeps from callusguard, unchanged in meaning:
     set by its tier.
 
 What it adds:
-  * ONE SHELL, TWO HOSTS. Claude's `Bash` and Codex's `exec`/`exec_command` are
-    the same surface. A failure that recurs on both hosts is corroborated by two
-    independent agents, and the candidate says so.
+  * ONE SHELL, EVERY HOST. Claude's `Bash`, Codex's `exec`/`exec_command` and
+    Cursor's terminal tools (recorded as `shell`) are the same surface. A failure that
+    recurs on more than one host is corroborated by independent agents, and the
+    candidate says so.
   * BREADTH. A failure repeated 40 times inside one session is one incident in a
     retry loop. A cluster must span >= 2 sessions to be proposed.
   * THE REPLAY GATE (from AutoRefine, made deterministic). The candidate pattern
@@ -200,7 +201,7 @@ def _sample(e) -> dict:
 
 
 def replay_ruleset(rules: list, corpus) -> list:
-    """Replay an existing ruleset (callusguard format) against history, both hosts.
+    """Replay an existing ruleset (callusguard format) against history, every host.
 
     For every Bash rule: how many recorded attempts it matches, how many of those
     failed, and how many were successes it would have caught in the crossfire. A

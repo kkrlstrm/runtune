@@ -41,7 +41,7 @@ taken from each, how it was changed, and what was left out and why.
 - autoharness's evidence quotes are never checked against the transcript. RunTune's evidence
   is built from recorded rows, not from model-written quotes.
 - It has no human approval step. RunTune requires a named approver for every apply.
-- It covers Claude Code only. RunTune reads three sources.
+- It covers Claude Code only. RunTune reads four sources: Claude Code, Codex, Cursor and OpenRouter.
 
 ## AutoRefine (typed artifacts: rule / skill / subagent). arXiv 2601.22758; the repo has no LICENSE file.
 

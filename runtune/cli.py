@@ -7,7 +7,7 @@
     runtune review    measure every active artifact: keep / review / probe / retire / revalidate
     runtune retire    remove an artifact (a constraint retirement is a boundary change)
     runtune measure   ad-hoc before/after with a control, or adoption of a new way over an old one
-    runtune replay    replay an existing guard ruleset over history, both hosts
+    runtune replay    replay an existing guard ruleset over history, every host
     runtune routes    the approved-vs-ran-vs-billed traffic table
     runtune agents    per-agent-type census and verified token ratios
     runtune notify    derive + review, then ONE digest to every configured channel (local by default)

@@ -1,6 +1,6 @@
-"""One evidence stream, three producers.
+"""One evidence stream, four producers.
 
-Claude Code, Codex and OpenRouter record different things in different shapes.
+Claude Code, Codex, Cursor and OpenRouter record different things in different shapes.
 RunTune reduces all of them to two record types so every deriver and every
 measurement runs on the same footing:
 
@@ -25,7 +25,7 @@ from datetime import date, datetime, timedelta
 
 @dataclass(slots=True)
 class Event:
-    source: str                 # "claude" | "codex" | "openrouter" | "jsonl"
+    source: str                 # "claude" | "codex" | "cursor" | "openrouter" | "jsonl"
     session: str
     ts: datetime
     kind: str                   # "tool" | "model"
