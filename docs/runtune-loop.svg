@@ -1,11 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1140" viewBox="0 0 720 912" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="1000" viewBox="0 0 720 1000" role="img" aria-labelledby="title desc">
   <title id="title">The RunTune learning loop</title>
-  <desc id="desc">Real agent runs create evidence. Success reinforces capability, failure adds constraint, and drift adjusts routing. RunTune proposes measured changes for human approval, which updates the harness for future runs.</desc>
+  <desc id="desc">Real agent runs produce evidence. Success reinforces capability, failure adds constraint, and drift adjusts routing. RunTune proposes measured changes for human approval. The harness shapes future runs, which feed the next cycle.</desc>
   <style>
     :root { color-scheme: light dark; }
     .ink { fill: #172033; }
     .muted { fill: #5b6475; }
-    .line { stroke: #aab4c4; }
+    .line { stroke: #9da9b9; }
     .accent { fill: #2457d6; }
     .accent-line { stroke: #2457d6; }
     .panel { fill: #f5f7fb; stroke: #d4dbe6; }
@@ -28,65 +28,64 @@
       .branch-drift { fill: #2c2843; stroke: #8073bd; }
     }
     text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .eyebrow { font-size: 26px; font-weight: 700; letter-spacing: 3px; }
-    .label { font-size: 30px; font-weight: 750; letter-spacing: 1.5px; }
-    .body { font-size: 28px; font-weight: 500; }
-    .small { font-size: 26px; font-weight: 600; }
+    .eyebrow { font-size: 20px; font-weight: 700; letter-spacing: 2.5px; }
+    .label { font-size: 25px; font-weight: 750; letter-spacing: 1.3px; }
+    .body { font-size: 22px; font-weight: 500; }
+    .small { font-size: 21px; font-weight: 600; }
   </style>
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
       <path d="M 0 0 L 10 5 L 0 10 z" class="accent"/>
     </marker>
   </defs>
 
-  <!-- A narrower viewBox keeps type legible when GitHub constrains this image on mobile. -->
-  <g transform="scale(.8)">
+  <!-- The return path starts at Future Runs and ends at the next real-agent run. -->
+  <path d="M500 928 H670 Q700 928 700 898 V90 Q700 78 688 78 H536" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
 
-  <!-- Closed loop: the side rail returns future runs to the next evidence cycle. -->
-  <path d="M 110 1010 V 1055 Q 110 1085 140 1085 H 805 Q 875 1085 875 1015 V 150 Q 875 105 825 105 H 700" fill="none" class="accent-line" stroke-width="5" stroke-linecap="round" marker-end="url(#arrow)"/>
-  <text x="450" y="1118" text-anchor="middle" class="eyebrow muted">TUNE THE HARNESS, NOT THE MODEL.</text>
+  <rect x="190" y="42" width="340" height="70" rx="16" class="panel" stroke-width="2"/>
+  <text x="360" y="86" text-anchor="middle" class="label ink">REAL AGENT RUNS</text>
+  <path d="M360 112 V152" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 
-  <rect x="255" y="72" width="390" height="86" rx="18" class="panel" stroke-width="2"/>
-  <text x="450" y="125" text-anchor="middle" class="label ink">REAL AGENT RUNS</text>
-  <path d="M450 158 V202" fill="none" class="accent-line" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="210" y="160" width="300" height="68" rx="16" class="panel-strong" stroke-width="2"/>
+  <text x="360" y="203" text-anchor="middle" class="label ink">EVIDENCE</text>
+  <path d="M360 228 V263 H140 M360 263 H580 M140 263 V282 M360 263 V282 M580 263 V282" fill="none" class="line" stroke-width="3" stroke-linecap="round"/>
 
-  <rect x="278" y="213" width="344" height="78" rx="18" class="panel-strong" stroke-width="2"/>
-  <text x="450" y="263" text-anchor="middle" class="label ink">EVIDENCE</text>
-  <path d="M450 291 V325 H165 V353 M450 325 V353 M450 325 H735 V353" fill="none" class="line" stroke-width="3" stroke-linecap="round"/>
+  <rect x="40" y="292" width="200" height="118" rx="16" class="branch-success" stroke-width="2"/>
+  <text x="140" y="334" text-anchor="middle" class="label ink">SUCCESS</text>
+  <text x="140" y="370" text-anchor="middle" class="body muted">reinforce</text>
+  <text x="140" y="394" text-anchor="middle" class="body muted">capability</text>
 
-  <rect x="45" y="365" width="240" height="128" rx="18" class="branch-success" stroke-width="2"/>
-  <text x="165" y="412" text-anchor="middle" class="label ink">SUCCESS</text>
-  <text x="165" y="454" text-anchor="middle" class="body muted">reinforce</text>
-  <text x="165" y="482" text-anchor="middle" class="body muted">capability</text>
+  <rect x="260" y="292" width="200" height="118" rx="16" class="branch-failure" stroke-width="2"/>
+  <text x="360" y="334" text-anchor="middle" class="label ink">FAILURE</text>
+  <text x="360" y="370" text-anchor="middle" class="body muted">add</text>
+  <text x="360" y="394" text-anchor="middle" class="body muted">constraint</text>
 
-  <rect x="330" y="365" width="240" height="128" rx="18" class="branch-failure" stroke-width="2"/>
-  <text x="450" y="412" text-anchor="middle" class="label ink">FAILURE</text>
-  <text x="450" y="454" text-anchor="middle" class="body muted">add</text>
-  <text x="450" y="482" text-anchor="middle" class="body muted">constraint</text>
+  <rect x="480" y="292" width="200" height="118" rx="16" class="branch-drift" stroke-width="2"/>
+  <text x="580" y="334" text-anchor="middle" class="label ink">DRIFT</text>
+  <text x="580" y="370" text-anchor="middle" class="body muted">adjust</text>
+  <text x="580" y="394" text-anchor="middle" class="body muted">routing</text>
 
-  <rect x="615" y="365" width="240" height="128" rx="18" class="branch-drift" stroke-width="2"/>
-  <text x="735" y="412" text-anchor="middle" class="label ink">DRIFT</text>
-  <text x="735" y="454" text-anchor="middle" class="body muted">adjust</text>
-  <text x="735" y="482" text-anchor="middle" class="body muted">routing</text>
+  <path d="M140 410 V426 H360 M360 410 V426 M580 410 V426 H360" fill="none" class="line" stroke-width="3" stroke-linecap="round"/>
+  <path d="M360 426 V466" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 
-  <path d="M165 493 V531 H450 M450 493 V531 M735 493 V531 H450 V565" fill="none" class="line" stroke-width="3" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="160" y="474" width="400" height="130" rx="18" class="panel-strong" stroke-width="2"/>
+  <text x="360" y="519" text-anchor="middle" class="label ink">RUNTUNE</text>
+  <path d="M245 542 H475" class="line" stroke-width="2"/>
+  <text x="260" y="574" text-anchor="middle" class="body muted">derive</text>
+  <text x="360" y="574" text-anchor="middle" class="body muted">propose</text>
+  <text x="460" y="574" text-anchor="middle" class="body muted">measure</text>
+  <path d="M360 604 V646" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 
-  <rect x="225" y="578" width="450" height="174" rx="22" class="panel-strong" stroke-width="2"/>
-  <text x="450" y="633" text-anchor="middle" class="label ink">RUNTUNE</text>
-  <path d="M310 660 H590" class="line" stroke-width="2"/>
-  <text x="330" y="707" text-anchor="middle" class="body muted">derive</text>
-  <text x="450" y="707" text-anchor="middle" class="body muted">propose</text>
-  <text x="570" y="707" text-anchor="middle" class="body muted">measure</text>
-  <path d="M450 752 V793" fill="none" class="accent-line" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="195" y="654" width="330" height="60" rx="30" class="panel-warm" stroke-width="2"/>
+  <text x="360" y="692" text-anchor="middle" class="label ink">HUMAN APPROVAL</text>
+  <path d="M360 714 V754" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 
-  <rect x="260" y="805" width="380" height="72" rx="36" class="panel-warm" stroke-width="2"/>
-  <text x="450" y="851" text-anchor="middle" class="label ink">HUMAN APPROVAL</text>
-  <path d="M450 877 V917" fill="none" class="accent-line" stroke-width="4" marker-end="url(#arrow)"/>
+  <rect x="140" y="762" width="440" height="88" rx="18" class="panel" stroke-width="2"/>
+  <text x="360" y="799" text-anchor="middle" class="label ink">HARNESS</text>
+  <text x="360" y="828" text-anchor="middle" class="small muted">skills · sub-agents · guards · routes</text>
+  <path d="M360 850 V890" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
 
-  <rect x="205" y="930" width="490" height="104" rx="20" class="panel" stroke-width="2"/>
-  <text x="450" y="974" text-anchor="middle" class="label ink">HARNESS</text>
-  <text x="450" y="1013" text-anchor="middle" class="small muted">skills · sub-agents · guards · routes</text>
-  <path d="M450 1034 V1052" fill="none" class="accent-line" stroke-width="4" marker-end="url(#arrow)"/>
-  <text x="450" y="1074" text-anchor="middle" class="eyebrow muted">FUTURE RUNS</text>
-  </g>
+  <rect x="220" y="898" width="280" height="60" rx="30" class="panel-strong" stroke-width="2"/>
+  <text x="360" y="936" text-anchor="middle" class="label ink">FUTURE RUNS</text>
+  <text x="360" y="990" text-anchor="middle" class="eyebrow muted">TUNE THE HARNESS, NOT THE MODEL.</text>
 </svg>

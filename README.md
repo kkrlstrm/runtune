@@ -6,7 +6,9 @@
 ![python](https://img.shields.io/badge/python-3.10%2B-blue) ![deps](https://img.shields.io/badge/core%20dependencies-0-brightgreen)
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
-![RunTune's evidence-to-harness learning loop](docs/runtune-loop.svg)
+<p align="center">
+  <img src="docs/runtune-loop.svg" alt="RunTune's evidence-to-harness learning loop" width="600">
+</p>
 
 RunTune is a runtime learning loop for coding agents. It turns real Claude Code, Codex and
 model-router runs into governed changes to the system around them.
