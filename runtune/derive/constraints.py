@@ -12,8 +12,8 @@ What it keeps from callusguard, unchanged in meaning:
     set by its tier.
 
 What it adds:
-  * ONE SHELL, EVERY HOST. Claude's `Bash`, Codex's `exec`/`exec_command` and
-    Cursor's terminal tools (recorded as `shell`) are the same surface. A failure that
+  * ONE SHELL, EVERY HOST. Claude's `Bash`, Codex's `exec`/`exec_command`, Cursor's
+    terminal tools (recorded as `shell`) and Antigravity's `run_command` are the same surface. A failure that
     recurs on more than one host is corroborated by independent agents, and the
     candidate says so.
   * BREADTH. A failure repeated 40 times inside one session is one incident in a
@@ -39,7 +39,7 @@ from ..evidence import shapes, tiers
 from ..evidence.redact import redact
 from .candidate import TIGHTEN, Candidate
 
-SHELL_SURFACES = {"Bash", "exec", "exec_command", "shell", "local_shell"}
+SHELL_SURFACES = {"Bash", "exec", "exec_command", "shell", "local_shell", "run_command"}
 MIN_FAILS = 3
 MIN_SESSIONS = 2
 # Collateral allowance. Above MAX_COLLATERAL the failure is immaterial against the

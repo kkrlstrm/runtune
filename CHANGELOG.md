@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Antigravity is a host.** `runtune record antigravity` backfills from the session
+  transcripts under `~/.gemini/antigravity/brain`, incrementally. Its `run_command` is a shell
+  surface everywhere shell evidence is read, so its failures can become constraints. The model
+  is taken from the transcript's model-selection lines and left unknown before the first one.
+  The warehouse source reads `antigravity_*` tables when a warehouse has them; none writes
+  them yet, so it reports a coverage note.
 - **Cursor is a host.** `runtune record cursor` backfills Cursor's agent history from its own
   store, read-only and incremental, with every outcome: failures, rejections, and shell exit
   codes (Cursor omits `exitCode` when it is 0; the recorder reports how many successes rest on

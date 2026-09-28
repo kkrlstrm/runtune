@@ -41,9 +41,9 @@ from .lifecycle.store import Workspace
 
 def _common(p):
     p.add_argument("--source", default=None,
-                   help="comma list of local (RunTune's own recordings) or claude,codex,cursor,openrouter "
+                   help="comma list of local (RunTune's own recordings) or claude,codex,cursor,antigravity,openrouter "
                         "(a cc-logger/codex-logger/cursor-logger/router warehouse at --db). Default: "
-                        "all four if $RUNTUNE_DB_URL is set, else local")
+                        "all five if $RUNTUNE_DB_URL is set, else local")
     p.add_argument("--db", default="RUNTUNE_DB_URL", help="DSN or env var holding one (default $RUNTUNE_DB_URL)")
     p.add_argument("--days", type=int, default=120)
     p.add_argument("--routes", help="path to the model allowlist (routes.json shape)")
@@ -56,7 +56,7 @@ def _common(p):
 def _corpus(a):
     if a.source is None:
         warehouse = "://" in a.db or bool(os.environ.get(a.db))
-        a.source = "" if a.jsonl else ("claude,codex,cursor,openrouter" if warehouse else "local")
+        a.source = "" if a.jsonl else ("claude,codex,cursor,antigravity,openrouter" if warehouse else "local")
     srcs = [s for s in a.source.split(",") if s]
     key = re.sub(r"[^a-z0-9]+", "-", f"{','.join(srcs)}-{a.days}-{a.routes}-{a.jsonl}".lower())[:120]
     path = os.path.join(a.workspace, f".corpus-{key}.pkl")
@@ -230,6 +230,9 @@ def cmd_record(a):
         res = cursor.ingest(a.root)
         print(json.dumps(res))
         return 1 if res.get("failed") or res.get("error") else 0
+    elif a.what == "antigravity":
+        from .record import antigravity
+        print(json.dumps(antigravity.ingest(a.root or "~/.gemini/antigravity/brain")))
     elif a.what == "openrouter":
         from .record import openrouter
         print(json.dumps(openrouter.snapshot_activity()))
@@ -259,6 +262,9 @@ def cmd_install(a):
           f"# Cursor history: schedule `runtune record cursor` (reads {cursor.default_store()}, incremental);\n"
           "# `runtune schedule` runs it before each digest. The hook does not record Cursor: through the\n"
           "# Claude-hook import it would see successes but never failures.")
+    print("\n# Antigravity — hook command for pre/post tool execution:")
+    print(f'# {cmd.format(host="antigravity")}')
+    print("# Antigravity history: schedule `runtune record antigravity` (reads ~/.gemini/antigravity/brain, incremental).")
     return 0
 
 
@@ -545,12 +551,12 @@ def main(argv=None) -> int:
     p.add_argument("--workspace", default=".runtune")
     p.add_argument("--approve", required=True)
     p.add_argument("--reason", required=True)
-    p = sub.add_parser("record", help="run a recorder: claude / codex / cursor (local history) or "
+    p = sub.add_parser("record", help="run a recorder: claude / codex / cursor / antigravity (local history) or "
                                       "openrouter (daily bill)")
-    p.add_argument("what", choices=["claude", "codex", "cursor", "openrouter"])
-    p.add_argument("--root", help="transcript dir (default ~/.claude/projects or ~/.codex/sessions), "
-                                  "or for cursor the path to Cursor's state.vscdb")
-    sub.add_parser("install", help="print the hook wiring for Claude Code, Codex and Cursor")
+    p.add_argument("what", choices=["claude", "codex", "cursor", "antigravity", "openrouter"])
+    p.add_argument("--root", help="transcript dir (default ~/.claude/projects, ~/.codex/sessions, or "
+                                  "~/.gemini/antigravity/brain), or for cursor the path to Cursor's state.vscdb")
+    sub.add_parser("install", help="print the hook wiring for Claude Code, Codex, Cursor and Antigravity")
     p = sub.add_parser("notify", help="derive + review, then send ONE digest to every configured channel")
     _common(p)
     p.add_argument("--channel", action="append", help="only these channel types (default: channels.json, "

@@ -101,7 +101,7 @@ def first_tokens(command: str | None) -> list[str]:
 def command_shape(surface: str, command: str | None) -> str:
     """The denominator key. For shell surfaces, the head of the command; for
     everything else, the tool surface itself (MCP servers collapse to the server)."""
-    if surface in ("Bash", "exec", "exec_command", "shell", "local_shell"):
+    if surface in ("Bash", "exec", "exec_command", "shell", "local_shell", "run_command"):
         toks = first_tokens(command)
         return " ".join(toks) if toks else ""
     if surface.startswith("mcp__"):

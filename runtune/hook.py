@@ -70,7 +70,7 @@ def record(host: str, p: dict, failed: bool) -> None:
         err = str(p.get("error") or "")[:400]
     else:
         failed, err = _failed_response(p.get("tool_response"))
-    ev = {"type": "event", "source": "claude" if host == "claude" else "codex",
+    ev = {"type": "event", "source": host if host in ("claude", "codex", "cursor", "antigravity") else "claude",
           "session": p.get("session_id") or "?", "ts": datetime.now(timezone.utc).isoformat(),
           "surface": p.get("tool_name") or "?", "text": redact(_text(ti), 1500), "ok": not failed,
           "actor": p.get("agent_type") or "root", "invocation": p.get("agent_id") or None,

@@ -67,7 +67,7 @@ def _tool_matches(rule_tool: str | None, tool_name: str) -> bool:
         return True
     if rule_tool.endswith("*"):
         return tool_name.startswith(rule_tool[:-1])
-    aliases = {"Bash": {"Bash", "exec", "exec_command", "shell", "local_shell", "Shell"}}
+    aliases = {"Bash": {"Bash", "exec", "exec_command", "shell", "local_shell", "Shell", "run_command"}}
     return tool_name in aliases.get(rule_tool, {rule_tool})
 
 

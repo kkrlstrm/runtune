@@ -717,6 +717,48 @@ class CursorHost(unittest.TestCase):
         self.assertEqual(c.events, [])
         self.assertIn("no cursor_* tables", c.coverage["cursor"].notes[0])
 
+    def test_warehouse_without_antigravity_tables(self):
+        from runtune.sources import antigravity, pg
+        real = pg.query
+        def missing(*a, **k):
+            raise RuntimeError('relation "antigravity_tool_calls" does not exist')
+        pg.query = missing
+        try:
+            c = antigravity.load("postgresql://x", 30)
+        finally:
+            pg.query = real
+        self.assertEqual(c.events, [])
+        self.assertIn("no antigravity_* tables", c.coverage["antigravity"].notes[0])
+
+    def test_antigravity_parser(self):
+        from runtune.record import antigravity
+        with tempfile.TemporaryDirectory() as root:
+            brain_dir = os.path.join(root, "brain", "session1", ".system_generated", "logs")
+            os.makedirs(brain_dir)
+            t_path = os.path.join(brain_dir, "transcript.jsonl")
+            lines = [
+                json.dumps({"created_at": "2026-09-28T12:00:00Z", "source": "MODEL", "type": "PLANNER_RESPONSE",
+                            "tool_calls": [{"name": "run_command", "args": {"CommandLine": "python3 -m pytest"}}]}),
+                json.dumps({"created_at": "2026-09-28T12:00:05Z", "source": "MODEL", "type": "GENERIC",
+                            "content": "The command exited with code 0"}),
+            ]
+            with open(t_path, "w") as f:
+                f.write("\n".join(lines) + "\n")
+            evs = antigravity.parse(t_path)
+            self.assertEqual(len(evs), 1)
+            self.assertEqual(evs[0]["source"], "antigravity")
+            self.assertEqual(evs[0]["surface"], "run_command")
+            self.assertTrue(evs[0]["ok"])
+
+            os.environ["RUNTUNE_HOME"] = os.path.join(root, "home")   # never the real ~/.runtune
+            try:
+                res = antigravity.ingest(os.path.join(root, "brain"))
+            finally:
+                del os.environ["RUNTUNE_HOME"]
+            self.assertEqual(res["files_read"], 1)
+            self.assertEqual(res["events_written"], 1)
+            self.assertIsNone(evs[0]["model"])                           # no model line: unknown
+
 
 class Architecture(unittest.TestCase):
     """One write boundary: only the promoter changes the harness, and only approval reaches it."""
