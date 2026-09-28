@@ -2,7 +2,7 @@
 
 This is the source that needs nothing else installed. The hook writes Claude Code
 and Codex tool calls here; `runtune record codex` backfills Codex from its rollout
-files; `runtune record openrouter` snapshots the provider bill and `runtune.record.
+files and `runtune record cursor` Cursor from its state.vscdb; `runtune record openrouter` snapshots the provider bill and `runtune.record.
 openrouter.log_call()` records a routed call from application code. Invocations
 (one sub-agent's life) are rebuilt from the events that carry an `invocation` id.
 """

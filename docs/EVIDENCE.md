@@ -217,6 +217,7 @@ Everything above comes from commands in this repo. On your own machine:
 ```bash
 runtune record claude                 # backfill Claude Code from ~/.claude/projects (last ~30 days)
 runtune record codex                  # backfill Codex from ~/.codex/sessions
+runtune record cursor                 # backfill Cursor from its state.vscdb
 runtune scan                          # coverage, gaps, model epochs
 runtune derive                        # proposals + the withheld table (the funnel)
 runtune agents                        # per-agent-type census and verified token ratios

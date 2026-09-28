@@ -10,12 +10,13 @@ RunTune records, enforces, learns, and measures without any other tool installed
 |---|---|---|
 | record Claude Code | `python3 -m runtune.hook --host claude` on PostToolUse / PostToolUseFailure; `runtune record claude` backfills from transcripts, including per-agent tokens | `~/.runtune/events/<day>.jsonl` |
 | record Codex | the same hook on Codex, plus `runtune record codex` to read `~/.codex/sessions` rollouts incrementally | same |
+| record Cursor | `runtune record cursor` reads Cursor's own store (`state.vscdb`) incrementally, with every outcome; `runtune schedule` runs it before each digest. The hook does not record Cursor, because Cursor's import of Claude Code hooks never delivers failures | same |
 | record OpenRouter | `runtune.record.openrouter.log_call()` from your router; `runtune record openrouter` daily for the bill | `events/`, `spend/` |
-| enforce | the same hook on PreToolUse: monitor / nudge / deny / block, most restrictive wins, capped at each rule's evidence ceiling, fails open | `~/.runtune/audit.jsonl` (hash-chained) |
+| enforce | the same hook on PreToolUse (Cursor: `preToolUse`, answered in Cursor's format): monitor / nudge / deny / block, most restrictive wins, capped at each rule's evidence ceiling, fails open | `~/.runtune/audit.jsonl` (hash-chained) |
 | learn, notify, apply, measure | `derive`, `notify`, `inbox`, `review` | `.runtune/` |
 
 All recorded text is redacted before it touches disk. If you already run a telemetry warehouse
-(cc-logger, codex-logger, a router call log), point `--db` at it: the same derivers read it
+(cc-logger, codex-logger, cursor-logger, a router call log), point `--db` at it: the same derivers read it
 directly. The standalone Codex recorder and codex-logger agree to within 4% on the same rollout
 files (2,412 against about 2,500 settled calls).
 

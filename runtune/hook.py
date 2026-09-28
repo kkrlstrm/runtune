@@ -2,14 +2,25 @@
 
     python3 -m runtune.hook --host claude   # Claude Code: PreToolUse, PostToolUse, PostToolUseFailure
     python3 -m runtune.hook --host codex    # Codex CLI: PreToolUse, PostToolUse
+    python3 -m runtune.hook --host cursor   # Cursor (~/.cursor/hooks.json): preToolUse
 
 PreToolUse   -> evaluate the active rulesets; audit every rule that fired, emit the verdict
 PostToolUse  -> append one settled attempt to ~/.runtune/events/<day>.jsonl
 PostToolUseFailure -> the same, marked failed, with the error text
 
-The host is passed explicitly rather than guessed: `CLAUDECODE=1` is exported into
-every shell Claude Code spawns, so a Codex hook run from such a shell would guess
-wrong. Everything here fails open — a recorder or guard fault never stops the agent.
+The host is passed explicitly rather than guessed from the environment: `CLAUDECODE=1`
+is exported into every shell Claude Code spawns, so a Codex hook run from such a shell
+would guess wrong. The one exception is Cursor, identified from the payload itself: Cursor
+also runs the Claude Code hooks in ~/.claude/settings.json (on by default), so a hook
+installed with `--host claude` gets called by Cursor too. Every Cursor payload carries
+`cursor_version`, and its event names start lowercase (`preToolUse`).
+
+For Cursor the hook ENFORCES and does not record. Cursor's Claude-hook import maps only
+PreToolUse and PostToolUse, not PostToolUseFailure, so a hook-recorded Cursor corpus
+would contain the successes and miss the failures. `runtune record cursor` reads every
+outcome from Cursor's own store instead.
+
+Everything here fails open — a recorder or guard fault never stops the agent.
 Recorded text is redacted before it touches disk.
 """
 
@@ -70,7 +81,11 @@ def record(host: str, p: dict, failed: bool) -> None:
         f.write(json.dumps(ev) + "\n")
 
 
-def guard(p: dict, brand: str = "runtune") -> tuple[str, str, int]:
+def is_cursor(host: str, p: dict) -> bool:
+    return host == "cursor" or "cursor_version" in p
+
+
+def guard(p: dict, brand: str = "runtune", cursor: bool = False) -> tuple[str, str, int]:
     rules, faults = enforce.load_rules(home.rule_files(p.get("cwd")))
     ti = p.get("tool_input") if isinstance(p.get("tool_input"), dict) else {}
     v = enforce.evaluate(rules, p.get("tool_name") or "", ti)
@@ -81,7 +96,7 @@ def guard(p: dict, brand: str = "runtune") -> tuple[str, str, int]:
             "tool": p.get("tool_name"), "tool_use_id": p.get("tool_use_id"),
             "fired": [{k: f[k] for k in ("id", "action", "downgraded")} for f in v["fired"]],
             "command_preview": redact(_text(ti), 160), "faults": faults + v["faults"]})
-    return enforce.emit(v, brand)
+    return enforce.emit_cursor(v, brand) if cursor else enforce.emit(v, brand)
 
 
 def main(argv=None) -> int:
@@ -90,14 +105,17 @@ def main(argv=None) -> int:
     try:
         p = json.loads(sys.stdin.read() or "{}")
         event = p.get("hook_event_name", "")
+        cursor = is_cursor(host, p)
+        if cursor:
+            event = event[:1].upper() + event[1:]      # preToolUse -> PreToolUse
         if event == "PreToolUse":
-            out, err, code = guard(p)
+            out, err, code = guard(p, cursor=cursor)
             if out:
                 sys.stdout.write(out)
             if err:
                 sys.stderr.write(err)
             return code
-        if event in ("PostToolUse", "PostToolUseFailure"):
+        if event in ("PostToolUse", "PostToolUseFailure") and not cursor:
             record(host, p, failed=event == "PostToolUseFailure")
     except Exception as exc:  # noqa: BLE001 - fail open, always
         try:

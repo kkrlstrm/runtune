@@ -1,5 +1,5 @@
 """A portable, dependency-free evidence format — for tests, demos, and any
-recorder that isn't cc-logger / codex-logger / the OpenRouter router.
+recorder that isn't cc-logger / codex-logger / cursor-logger / the OpenRouter router.
 
 One JSON object per line:
 

@@ -8,7 +8,7 @@ from ..evidence.schema import Corpus
 def load(sources: list[str], db: str | None = None, days: int = 120,
          routes: str | None = None, jsonl: list[str] | None = None) -> Corpus:
     corpus = Corpus()
-    if any(s in sources for s in ("claude", "codex", "openrouter")):
+    if any(s in sources for s in ("claude", "codex", "cursor", "openrouter")):
         from . import pg
         dsn = pg.resolve_dsn(db)
     if "claude" in sources:
@@ -17,6 +17,9 @@ def load(sources: list[str], db: str | None = None, days: int = 120,
     if "codex" in sources:
         from . import codex
         corpus.extend(codex.load(dsn, days))
+    if "cursor" in sources:
+        from . import cursor
+        corpus.extend(cursor.load(dsn, days))
     if "openrouter" in sources:
         from . import openrouter
         corpus.extend(openrouter.load(dsn, days, routes))

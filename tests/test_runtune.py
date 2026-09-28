@@ -469,6 +469,29 @@ class StandaloneHook(unittest.TestCase):
         self.assertFalse(evs[0]["ok"])
         self.assertEqual(evs[0]["model"], "gpt-5.6")
 
+    def test_cursor_rows(self):
+        from datetime import datetime, timezone
+        from runtune.sources import cursor
+        ts = datetime(2026, 9, 21, 10, tzinfo=timezone.utc)
+        row = dict(session_id="s", call_id="c", tool_name="run_terminal_cmd", exit_code=None,
+                   error="", ts=ts, model="grok-4.6", actor="root", parent_session_id=None)
+        rows = [dict(row, call_id="c1", status="success", outcome_basis="exit_code_omitted",
+                     text="git status"),
+                dict(row, call_id="c2", status="failure", exit_code=128, outcome_basis="exit_code",
+                     text="git log", error="fatal: not a git repository"),
+                dict(row, call_id="c3", status="aborted", outcome_basis="tool_status", text="x"),
+                dict(row, call_id="c4", tool_name="read_file_v2", status="success",
+                     outcome_basis="tool_status", text="/a.py")]
+        c = cursor.from_rows(rows, [dict(session_id="s", parent_session_id=None, model="grok-4.6",
+                                         started_at=ts, updated_at=ts)])
+        self.assertEqual(len(c.events), 3)               # the aborted call is unsettled
+        self.assertEqual(c.coverage["cursor"].unsettled, 1)
+        self.assertEqual({e.surface for e in c.events}, {"shell", "read_file"})
+        self.assertEqual(c.events[1].shape, "git log")
+        self.assertFalse(c.events[1].ok)
+        self.assertTrue(any("omitted exit code" in n for n in c.coverage["cursor"].notes))
+        self.assertEqual(c.invocations[0].failures, 1)
+
 
 class Channels(unittest.TestCase):
     def _run(self, root):
@@ -557,6 +580,142 @@ class ClaudeBackfill(unittest.TestCase):
             self.assertEqual(evs[0]["actor"], "web-researcher")
             self.assertNotIn("u:p@h", evs[0]["text"])
             self.assertEqual((inv["tokens_out"], inv["tokens_reread"]), (10, 900))
+
+class CursorHost(unittest.TestCase):
+    """Cursor: backfill from its store, enforcement through its hook, never hook-recorded."""
+
+    CID, SUB = "c0000000-0000-0000-0000-000000000001", "c0000000-0000-0000-0000-000000000002"
+
+    @staticmethod
+    def _tool(name, params, result, status="completed", call="c", error=None):
+        tf = {"toolCallId": call, "name": name, "status": status, "params": json.dumps(params),
+              "result": None if result is None else json.dumps(result)}
+        if error:
+            tf["error"] = json.dumps({"modelVisibleErrorMessage": error})
+        return tf
+
+    def _store(self, path, bubbles, sub_bubbles=(), updated=1790000000000):
+        import sqlite3
+        con = sqlite3.connect(path)
+        con.execute("CREATE TABLE IF NOT EXISTS cursorDiskKV (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)")
+        con.execute("DELETE FROM cursorDiskKV")
+        def meta(cid, bs, subs):
+            return {"composerId": cid, "createdAt": 1789999999000, "lastUpdatedAt": updated,
+                    "modelConfig": {"modelName": "default"}, "subagentComposerIds": subs,
+                    "fullConversationHeadersOnly": [{"bubbleId": b["bubbleId"]} for b in bs]}
+        rows = [(f"composerData:{self.CID}", json.dumps(meta(self.CID, bubbles, [self.SUB]))),
+                ("composerData:draft", json.dumps({"composerId": "draft", "fullConversationHeadersOnly": []}))]
+        if sub_bubbles:
+            rows.append((f"composerData:{self.SUB}", json.dumps(meta(self.SUB, sub_bubbles, []))))
+        rows += [(f"bubbleId:{self.CID}:{b['bubbleId']}", json.dumps(b)) for b in bubbles]
+        rows += [(f"bubbleId:{self.SUB}:{b['bubbleId']}", json.dumps(b)) for b in sub_bubbles]
+        con.executemany("INSERT INTO cursorDiskKV VALUES(?,?)", rows)
+        con.commit()
+        con.close()
+
+    def _bubbles(self):
+        t = self._tool
+        at = lambda i: f"2026-09-21T10:00:{i:02d}Z"  # noqa: E731
+        return [
+            {"bubbleId": "u", "type": 1, "createdAt": at(0), "modelInfo": {"modelName": "grok-4.6"},
+             "toolFormerData": {"additionalData": "{'status': 'error'}"}},          # a stub, not a call
+            {"bubbleId": "b1", "type": 2, "createdAt": at(1), "toolFormerData": t(
+                "run_terminal_command_v2", {"command": "git status"}, {"output": "ok", "rejected": False}, call="t1")},
+            {"bubbleId": "b2", "type": 2, "createdAt": at(2), "toolFormerData": t(
+                "run_terminal_cmd", {"command": "psql postgresql://u:p@h/db"},
+                {"output": "connection refused", "exitCodeV2": 2}, call="t2")},
+            {"bubbleId": "b3", "type": 2, "createdAt": at(3), "toolFormerData": t(
+                "run_terminal_cmd", {"command": "rm -rf x"}, {"rejected": True}, call="t3")},
+            {"bubbleId": "b4", "type": 2, "createdAt": at(4), "toolFormerData": t(
+                "glob_file_search", {"globPattern": "*"}, {}, status="error", call="t4", error="Path does not exist")},
+            {"bubbleId": "b5", "type": 2, "createdAt": at(5), "toolFormerData": t(
+                "web_search", {"searchTerm": "q"}, None, status="cancelled", call="t5")},
+            {"bubbleId": "b6", "type": 2, "createdAt": at(6), "toolFormerData": t(
+                "read_file_v2", {"targetFile": "/a.py"}, {"contents": "x"}, call="t6")},
+        ]
+
+    def test_record_outcomes_incremental_and_rewind(self):
+        from runtune.record import cursor
+        from runtune.sources import local
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["RUNTUNE_HOME"] = os.path.join(d, "home")
+            store = os.path.join(d, "state.vscdb")
+            try:
+                sub = [{"bubbleId": "s1", "type": 2, "createdAt": "2026-09-21T10:01:00Z", "toolFormerData":
+                        self._tool("run_terminal_cmd", {"command": "ls"}, {"exitCodeV2": 0}, call="st1")}]
+                bubbles = self._bubbles()
+                self._store(store, bubbles, sub)
+                r = cursor.ingest(store)
+                self.assertEqual((r["events_written"], r["unsettled"], r["exit_code_inferred"], r["failed"]),
+                                 (6, 1, 1, 0))
+                evs = {e.text.split()[0] if e.text else e.surface: e for e in local.load(days=4000).events}
+                self.assertTrue(evs["git"].ok)
+                self.assertEqual(evs["git"].surface, "shell")
+                self.assertEqual(evs["git"].model, "grok-4.6")
+                self.assertFalse(evs["psql"].ok)
+                self.assertNotIn("u:p@h", evs["psql"].text)
+                self.assertFalse(evs["rm"].ok)
+                self.assertEqual(evs["/a.py"].surface, "read_file")
+                self.assertEqual((evs["ls"].actor, evs["ls"].session, evs["ls"].invocation),
+                                 ("subagent", self.CID, self.SUB))
+                self.assertEqual(cursor.ingest(store)["events_written"], 0)      # nothing changed
+                # restore a checkpoint to after b2, then run one new call: the rewound calls
+                # did run, so their events stay, and only the new call is added
+                self._store(store, bubbles[:3] + [{"bubbleId": "b9", "type": 2, "createdAt": "2026-09-21T10:02:00Z",
+                            "toolFormerData": self._tool("run_terminal_cmd", {"command": "make"}, {"exitCodeV2": 0},
+                                                         call="t9")}], sub, updated=1790000009999)
+                self.assertEqual(cursor.ingest(store)["events_written"], 1)
+                self.assertEqual(len(local.load(days=4000).events), 7)
+            finally:
+                del os.environ["RUNTUNE_HOME"]
+
+    def _hook(self, payload, host="claude"):
+        import io, sys as _sys
+        from runtune import hook
+        out = io.StringIO()
+        _sys.stdin, _sys.stdout = io.StringIO(json.dumps(payload)), out
+        try:
+            code = hook.main(["--host", host])
+        finally:
+            _sys.stdin, _sys.stdout = _sys.__stdin__, _sys.__stdout__
+        return code, out.getvalue()
+
+    def test_hook_enforces_in_cursor_format_and_does_not_record(self):
+        with tempfile.TemporaryDirectory() as d:
+            os.environ["RUNTUNE_HOME"] = d
+            os.environ["RUNTUNE_RULES"] = os.path.join(d, "r.json")
+            with open(os.environ["RUNTUNE_RULES"], "w") as f:
+                json.dump({"rules": [{"id": "no-psql", "tool": "Bash", "any": [r"\bpsql\b"],
+                                      "action": "deny", "message": "use the wrapper"}]}, f)
+            try:
+                base = {"cursor_version": "3.21.18", "conversation_id": "c1", "session_id": "c1",
+                        "tool_name": "Shell", "tool_input": {"command": "psql -c 1"}}
+                # reached through the Claude-hook import: --host claude, Cursor's event name
+                code, out = self._hook({**base, "hook_event_name": "preToolUse"})
+                self.assertEqual(code, 0)
+                self.assertEqual(json.loads(out)["permission"], "deny")
+                code, out = self._hook({**base, "hook_event_name": "postToolUse", "tool_output": "x"}, host="cursor")
+                self.assertEqual((code, out), (0, ""))
+                self.assertFalse(os.path.exists(os.path.join(d, "events")))    # Cursor is not hook-recorded
+                from runtune import enforce
+                self.assertEqual(enforce.emit_cursor({"action": "block", "messages": ["m"]})[2], 2)
+                self.assertNotIn("permission", json.loads(enforce.emit_cursor({"action": "nudge",
+                                                                                  "messages": ["m"]})[0]))
+            finally:
+                del os.environ["RUNTUNE_HOME"], os.environ["RUNTUNE_RULES"]
+
+    def test_warehouse_without_cursor_tables(self):
+        from runtune.sources import cursor, pg
+        real = pg.query
+        def missing(*a, **k):
+            raise RuntimeError('relation "cursor_tool_calls" does not exist')
+        pg.query = missing
+        try:
+            c = cursor.load("postgresql://x", 30)
+        finally:
+            pg.query = real
+        self.assertEqual(c.events, [])
+        self.assertIn("no cursor_* tables", c.coverage["cursor"].notes[0])
 
 
 class Architecture(unittest.TestCase):

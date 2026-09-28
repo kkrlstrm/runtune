@@ -5,7 +5,7 @@
       spend/YYYY-MM-DD.jsonl    provider billing snapshots (OpenRouter activity)
       audit.jsonl               every enforcement verdict, hash-chained
       rules.json                machine-wide constraints (a project adds rules/runtune.rules.json)
-      recorder-state.json       which Codex rollout files were already read
+      recorder-state.json       which transcripts, rollout files and Cursor sessions were already read
 """
 
 from __future__ import annotations

@@ -16,8 +16,8 @@
     runtune inbox     poll remote channels (Slack, email, plugins) for a reply and act on it
     runtune channels  list / add / remove / test notification channels
     runtune schedule  print or --install the weekly digest + hourly inbox (launchd / cron)
-    runtune record    claude | codex (backfill from local transcripts) | openrouter (daily bill)
-    runtune install   print the hook wiring for Claude Code and Codex
+    runtune record    claude | codex | cursor (backfill from local history) | openrouter (daily bill)
+    runtune install   print the hook wiring for Claude Code, Codex and Cursor
     runtune demo      the whole loop on a synthetic trace, in a temp dir
     runtune ledger    verify the hash chain
 """
@@ -41,9 +41,9 @@ from .lifecycle.store import Workspace
 
 def _common(p):
     p.add_argument("--source", default=None,
-                   help="comma list of local (RunTune's own recordings) or claude,codex,openrouter "
-                        "(a cc-logger/codex-logger/router warehouse at --db). Default: the warehouse "
-                        "if $RUNTUNE_DB_URL is set, else local")
+                   help="comma list of local (RunTune's own recordings) or claude,codex,cursor,openrouter "
+                        "(a cc-logger/codex-logger/cursor-logger/router warehouse at --db). Default: "
+                        "all four if $RUNTUNE_DB_URL is set, else local")
     p.add_argument("--db", default="RUNTUNE_DB_URL", help="DSN or env var holding one (default $RUNTUNE_DB_URL)")
     p.add_argument("--days", type=int, default=120)
     p.add_argument("--routes", help="path to the model allowlist (routes.json shape)")
@@ -56,7 +56,7 @@ def _common(p):
 def _corpus(a):
     if a.source is None:
         warehouse = "://" in a.db or bool(os.environ.get(a.db))
-        a.source = "" if a.jsonl else ("claude,codex,openrouter" if warehouse else "local")
+        a.source = "" if a.jsonl else ("claude,codex,cursor,openrouter" if warehouse else "local")
     srcs = [s for s in a.source.split(",") if s]
     key = re.sub(r"[^a-z0-9]+", "-", f"{','.join(srcs)}-{a.days}-{a.routes}-{a.jsonl}".lower())[:120]
     path = os.path.join(a.workspace, f".corpus-{key}.pkl")
@@ -225,6 +225,11 @@ def cmd_record(a):
     elif a.what == "codex":
         from .record import codex
         print(json.dumps(codex.ingest(a.root or "~/.codex/sessions")))
+    elif a.what == "cursor":
+        from .record import cursor
+        res = cursor.ingest(a.root)
+        print(json.dumps(res))
+        return 1 if res.get("failed") or res.get("error") else 0
     elif a.what == "openrouter":
         from .record import openrouter
         print(json.dumps(openrouter.snapshot_activity()))
@@ -246,6 +251,14 @@ def cmd_install(a):
     print("# Codex history: schedule `runtune record codex` (reads ~/.codex/sessions, incremental).")
     print("# OpenRouter: call runtune.record.openrouter.log_call() from your router; schedule "
           "`runtune record openrouter` daily (the provider keeps 30 days).")
+    from .record import cursor
+    print("\n# Cursor — ~/.cursor/hooks.json (enforcement only; merge if the file exists):")
+    print(json.dumps({"version": 1, "hooks": {"preToolUse": [{"command": cmd.format(host="cursor")}]}}, indent=2))
+    print("# Cursor also runs the Claude Code hooks in ~/.claude/settings.json unless you turn that off in\n"
+          "# Cursor's settings; the hook recognises a Cursor payload either way. Install ONE of the two.\n"
+          f"# Cursor history: schedule `runtune record cursor` (reads {cursor.default_store()}, incremental);\n"
+          "# `runtune schedule` runs it before each digest. The hook does not record Cursor: through the\n"
+          "# Claude-hook import it would see successes but never failures.")
     return 0
 
 
@@ -404,7 +417,13 @@ def cmd_schedule(a):
     cwd = os.path.dirname(ws_abs)
     py = sys.executable
     extra = " ".join(a.extra or [])
-    jobs = {"notify": (f"{py} -m runtune notify {extra}".strip(), {"Weekday": 1, "Hour": 9, "Minute": 0}),
+    notify = f"{py} -m runtune notify {extra}".strip()
+    from .record import cursor
+    if os.path.exists(cursor.default_store()):
+        # Cursor has no recording hook (see runtune/hook.py): read its store before each digest.
+        # `;` not `&&`: a Cursor format change must not cost the week's digest.
+        notify = f"{py} -m runtune record cursor; {notify}"
+    jobs = {"notify": (notify, {"Weekday": 1, "Hour": 9, "Minute": 0}),
             "inbox": (f"{py} -m runtune inbox --target-root {a.target_root}", {"Minute": 7})}
     if sys.platform == "darwin":
         for name, (cmd, when) in jobs.items():
@@ -469,7 +488,7 @@ def cmd_demo(a):
                     print("  " + os.path.relpath(p, tmp))
         step("ledger")
         main(["ledger", "--workspace", ws])
-        print(f"\nNext: `runtune record claude` (and/or `runtune record codex`) to load your own history, "
+        print(f"\nNext: `runtune record claude` (and/or `codex`, `cursor`) to load your own history, "
               f"then `runtune notify`.")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -526,10 +545,12 @@ def main(argv=None) -> int:
     p.add_argument("--workspace", default=".runtune")
     p.add_argument("--approve", required=True)
     p.add_argument("--reason", required=True)
-    p = sub.add_parser("record", help="run a recorder: codex (rollout files) or openrouter (daily bill)")
-    p.add_argument("what", choices=["claude", "codex", "openrouter"])
-    p.add_argument("--root", help="transcript dir (default ~/.claude/projects or ~/.codex/sessions)")
-    sub.add_parser("install", help="print the hook wiring for Claude Code and Codex")
+    p = sub.add_parser("record", help="run a recorder: claude / codex / cursor (local history) or "
+                                      "openrouter (daily bill)")
+    p.add_argument("what", choices=["claude", "codex", "cursor", "openrouter"])
+    p.add_argument("--root", help="transcript dir (default ~/.claude/projects or ~/.codex/sessions), "
+                                  "or for cursor the path to Cursor's state.vscdb")
+    sub.add_parser("install", help="print the hook wiring for Claude Code, Codex and Cursor")
     p = sub.add_parser("notify", help="derive + review, then send ONE digest to every configured channel")
     _common(p)
     p.add_argument("--channel", action="append", help="only these channel types (default: channels.json, "

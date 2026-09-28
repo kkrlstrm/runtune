@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Cursor is a host.** `runtune record cursor` backfills Cursor's agent history from its own
+  store, read-only and incremental, with every outcome: failures, rejections, and shell exit
+  codes (Cursor omits `exitCode` when it is 0; the recorder reports how many successes rest on
+  that). The hook enforces in Cursor through `preToolUse` and answers in Cursor's format, and
+  it recognises a Cursor payload even when Cursor reached it through `~/.claude/settings.json`,
+  which Cursor imports by default. It does not record Cursor, because that import never
+  delivers failures. `runtune schedule` reads the store before each digest. The warehouse
+  source reads cursor-logger's `cursor_*` tables and is on by default; a warehouse without
+  them gives a coverage note, not an error.
+
 ## 0.2.0 (2026-09-27)
 
 - **Standalone.** RunTune has its own recording and enforcement hook (Claude Code + Codex),

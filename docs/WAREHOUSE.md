@@ -1,6 +1,6 @@
 # Warehouse sources: the column contract
 
-You don't need a warehouse: `runtune record claude|codex` and the hook write local JSONL.
+You don't need a warehouse: `runtune record claude|codex|cursor` and the hook write local JSONL.
 If you already store agent telemetry in Postgres, point `--db` (or `$RUNTUNE_DB_URL`) at it
 and RunTune reads these tables in a read-only session. Give it a SELECT-only role.
 
@@ -18,6 +18,17 @@ and RunTune reads these tables in a read-only session. Give it a SELECT-only rol
 |---|---|
 | `codex_tool_calls` | session_id, call_id, tool_name, status (`success`/`failure`/`rejected`, others unsettled), exit_code, command, arguments, output, error_text, duration_ms, ts |
 | `codex_sessions` | session_id, subagent_type, model, started_at, ended_at, output_tokens, cached_input_tokens, parent_thread_id |
+
+## Cursor (cursor-logger schema)
+
+| table | columns read |
+|---|---|
+| `cursor_tool_calls` | session_id, call_id, tool_name (`run_terminal_command_v2`/`run_terminal_cmd` read as `shell`), status (`success`/`failure`/`rejected`, others unsettled), exit_code, outcome_basis, command, target, arguments, error_text, model, ts |
+| `cursor_sessions` | session_id, parent_session_id, model, models_seen, started_at, updated_at |
+
+Cursor keeps no billed token usage locally, so Cursor invocations carry no token figures. A
+warehouse without these tables gives a coverage note, not an error, so `cursor` is in the default
+source list.
 
 ## OpenRouter
 

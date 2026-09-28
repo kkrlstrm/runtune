@@ -13,8 +13,8 @@
   </picture>
 </p>
 
-RunTune is a runtime learning loop for coding agents. It turns real Claude Code, Codex and
-model-router runs into governed changes to the system around them.
+RunTune is a runtime learning loop for coding agents. It turns real Claude Code, Codex, Cursor
+and model-router runs into governed changes to the system around them.
 
 - **Success → capability.** Working patterns that repeat become skills, CLI paths, specialized
   sub-agents, or better routes.
@@ -51,15 +51,16 @@ runtune demo                    # the whole loop on a synthetic trace, in a temp
 
 runtune record claude           # backfill your Claude Code history (~/.claude/projects)
 runtune record codex            # and/or Codex (~/.codex/sessions)
+runtune record cursor           # and/or Cursor's agent (its local state.vscdb)
 runtune notify                  # one digest: a card + numbered proposals, with a desktop notification
 runtune show --open             # read it
 runtune reply 1,3               # approve items 1 and 3; the rest are snoozed for 28 days
 ```
 
 This uses only the transcripts already on your machine: no accounts, no database, no network.
-To keep it running, `runtune install` prints the recording hook for Claude Code and Codex (you
+To keep it running, `runtune install` prints the hook for Claude Code, Codex and Cursor (you
 paste it, because RunTune never edits host settings), and `runtune schedule --install` sends a
-weekly digest.
+weekly digest, reading Cursor's store first when Cursor is installed.
 
 ## From local loop to continuous operation
 

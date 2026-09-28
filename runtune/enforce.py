@@ -67,7 +67,7 @@ def _tool_matches(rule_tool: str | None, tool_name: str) -> bool:
         return True
     if rule_tool.endswith("*"):
         return tool_name.startswith(rule_tool[:-1])
-    aliases = {"Bash": {"Bash", "exec", "exec_command", "shell", "local_shell"}}
+    aliases = {"Bash": {"Bash", "exec", "exec_command", "shell", "local_shell", "Shell"}}
     return tool_name in aliases.get(rule_tool, {rule_tool})
 
 
@@ -123,4 +123,21 @@ def emit(verdict: dict, brand: str = "runtune") -> tuple[str, str, int]:
     if act == "nudge":
         return json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
                                                   "additionalContext": f"{brand}: {msg}"}}), "", 0
+    return "", "", 0
+
+
+def emit_cursor(verdict: dict, brand: str = "runtune") -> tuple[str, str, int]:
+    """(stdout, stderr, exit_code) for Cursor's preToolUse. Cursor reads exit 2 as a
+    deny with stderr as the reason, and otherwise a JSON {permission, user_message,
+    agent_message, additional_context}. A nudge leaves `permission` unset: "allow"
+    would also skip whatever approval Cursor itself would have asked for."""
+    act = verdict.get("action")
+    msg = " ".join(verdict.get("messages") or []) or "blocked by a RunTune constraint"
+    if act == "block":
+        return "", f"BLOCKED by {brand}: {msg}\n", 2
+    if act == "deny":
+        return json.dumps({"permission": "deny", "user_message": f"{brand}: {msg}",
+                           "agent_message": msg}), "", 0
+    if act == "nudge":
+        return json.dumps({"additional_context": f"{brand}: {msg}"}), "", 0
     return "", "", 0

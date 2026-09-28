@@ -12,13 +12,13 @@ taken from each, how it was changed, and what was left out and why.
 | Withheld clusters are reported, never dropped silently | every deriver returns `(proposed, withheld)` |
 | Probe vs prune: a quiet rule is a question, not a success | `lifecycle/review.py` → `probe` |
 | Hash-chained audit log | `lifecycle/ledger.py` |
-| cc-logger and codex-logger schemas | `sources/claude.py`, `sources/codex.py` read them directly |
+| cc-logger, codex-logger and cursor-logger schemas | `sources/claude.py`, `sources/codex.py`, `sources/cursor.py` read them directly |
 
 **Changed:**
 
 - Clusters are keyed per command shape, not per error signature. Many signatures compiled to
   the same regex, which produced duplicate candidates.
-- Claude `Bash` and Codex `exec` are treated as one shell surface.
+- Claude `Bash`, Codex `exec` and Cursor's terminal tools are treated as one shell surface.
 - A replay gate measures collateral before a human reads the candidate.
 - Enforcement stays in CallusGuard. RunTune writes rulesets in its format.
 
