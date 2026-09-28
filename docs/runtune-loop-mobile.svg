@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="1050" viewBox="0 0 360 1050" role="img" aria-labelledby="title desc">
+  <title id="title">The RunTune learning loop</title>
+  <desc id="desc">Real agent runs create evidence. Success reinforces capability, failure adds constraint, and drift adjusts routing. RunTune, human approval, and the harness shape future runs that begin the next cycle.</desc>
+  <style>
+    :root { color-scheme: light dark; }
+    .ink { fill: #172033; }
+    .muted { fill: #5b6475; }
+    .line { stroke: #9da9b9; }
+    .accent { fill: #2457d6; }
+    .accent-line { stroke: #2457d6; }
+    .panel { fill: #f5f7fb; stroke: #d4dbe6; }
+    .panel-strong { fill: #eef3ff; stroke: #9eb8f6; }
+    .panel-warm { fill: #fff8e8; stroke: #e8c86e; }
+    .branch-success { fill: #eaf8f1; stroke: #75c59d; }
+    .branch-failure { fill: #fff0ef; stroke: #e69b93; }
+    .branch-drift { fill: #f2efff; stroke: #aa9be5; }
+    @media (prefers-color-scheme: dark) {
+      .ink { fill: #eef3fb; }
+      .muted { fill: #aeb9ca; }
+      .line { stroke: #526070; }
+      .accent { fill: #8aadff; }
+      .accent-line { stroke: #8aadff; }
+      .panel { fill: #182231; stroke: #3f4d60; }
+      .panel-strong { fill: #1b2d52; stroke: #6689df; }
+      .panel-warm { fill: #332c1c; stroke: #987f38; }
+      .branch-success { fill: #173529; stroke: #4e9f78; }
+      .branch-failure { fill: #3a2425; stroke: #aa665f; }
+      .branch-drift { fill: #2c2843; stroke: #8073bd; }
+    }
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: 1.6px; }
+    .label { font-size: 19px; font-weight: 750; letter-spacing: 1px; }
+    .body { font-size: 17px; font-weight: 500; }
+    .small { font-size: 16px; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M 0 0 L 10 5 L 0 10 z" class="accent"/>
+    </marker>
+  </defs>
+
+  <!-- The return path starts at Future Runs and stays outside the reading column. -->
+  <path d="M295 969 H320 Q342 969 342 947 V58 Q342 52 336 52 H311" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+
+  <rect x="55" y="30" width="250" height="52" rx="15" class="panel" stroke-width="2"/>
+  <text x="180" y="68" text-anchor="middle" class="label ink">REAL AGENT RUNS</text>
+  <path d="M180 82 V120" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <rect x="70" y="128" width="220" height="52" rx="14" class="panel-strong" stroke-width="2"/>
+  <text x="180" y="161" text-anchor="middle" class="label ink">EVIDENCE</text>
+
+  <!-- Parallel outcomes use matching input and output rails instead of a cramped row. -->
+  <path d="M180 180 V200 H34 V483 M34 246 H52 M34 358 H52 M34 470 H52" fill="none" class="line" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M308 259 H326 V520 H180 M308 371 H326 M308 483 H326" fill="none" class="line" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <rect x="52" y="214" width="256" height="90" rx="15" class="branch-success" stroke-width="2"/>
+  <text x="180" y="248" text-anchor="middle" class="label ink">SUCCESS</text>
+  <text x="180" y="278" text-anchor="middle" class="body muted">reinforce capability</text>
+
+  <rect x="52" y="326" width="256" height="90" rx="15" class="branch-failure" stroke-width="2"/>
+  <text x="180" y="360" text-anchor="middle" class="label ink">FAILURE</text>
+  <text x="180" y="390" text-anchor="middle" class="body muted">add constraint</text>
+
+  <rect x="52" y="438" width="256" height="90" rx="15" class="branch-drift" stroke-width="2"/>
+  <text x="180" y="472" text-anchor="middle" class="label ink">DRIFT</text>
+  <text x="180" y="502" text-anchor="middle" class="body muted">adjust routing</text>
+
+  <path d="M180 520 V558" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="42" y="566" width="276" height="110" rx="17" class="panel-strong" stroke-width="2"/>
+  <text x="180" y="607" text-anchor="middle" class="label ink">RUNTUNE</text>
+  <path d="M93 628 H267" class="line" stroke-width="2"/>
+  <text x="105" y="655" text-anchor="middle" class="body muted">derive</text>
+  <text x="180" y="655" text-anchor="middle" class="body muted">propose</text>
+  <text x="255" y="655" text-anchor="middle" class="body muted">measure</text>
+  <path d="M180 676 V714" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <rect x="62" y="722" width="236" height="52" rx="26" class="panel-warm" stroke-width="2"/>
+  <text x="180" y="755" text-anchor="middle" class="label ink">HUMAN APPROVAL</text>
+  <path d="M180 774 V812" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <rect x="38" y="820" width="284" height="76" rx="16" class="panel" stroke-width="2"/>
+  <text x="180" y="852" text-anchor="middle" class="label ink">HARNESS</text>
+  <text x="180" y="878" text-anchor="middle" class="small muted">skills · sub-agents · guards · routes</text>
+  <path d="M180 896 V934" fill="none" class="accent-line" stroke-width="4" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+  <rect x="65" y="942" width="230" height="54" rx="27" class="panel-strong" stroke-width="2"/>
+  <text x="180" y="976" text-anchor="middle" class="label ink">FUTURE RUNS</text>
+  <text x="180" y="1031" text-anchor="middle" class="eyebrow muted">TUNE THE HARNESS, NOT THE MODEL.</text>
+</svg>

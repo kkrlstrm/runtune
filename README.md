@@ -7,7 +7,10 @@
 ![license](https://img.shields.io/badge/license-Apache--2.0-blue)
 
 <p align="center">
-  <img src="docs/runtune-loop.svg" alt="RunTune's evidence-to-harness learning loop" width="600">
+  <picture>
+    <source media="(max-width: 600px)" srcset="docs/runtune-loop-mobile.svg">
+    <img src="docs/runtune-loop.svg" alt="RunTune's evidence-to-harness learning loop" width="600">
+  </picture>
 </p>
 
 RunTune is a runtime learning loop for coding agents. It turns real Claude Code, Codex and
