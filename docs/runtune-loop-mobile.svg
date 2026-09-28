@@ -35,17 +35,17 @@
     .micro { font-size: 8px; font-weight: 600; }
   </style>
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto">
       <path d="M 0 0 L 10 5 L 0 10 z" class="accent"/>
     </marker>
   </defs>
 
   <!-- Future Runs begins the return path, which stays outside all labels. -->
-  <path d="M245 328 H352 Q356 328 356 324 V26 Q356 26 352 26 H266" fill="none" class="accent-line" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M245 328 H352 Q356 328 356 324 V26 Q356 26 352 26 H266" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
 
   <rect x="100" y="10" width="160" height="32" rx="9" class="panel" stroke-width="2"/>
   <text x="180" y="31" text-anchor="middle" class="label ink">REAL AGENT RUNS</text>
-  <path d="M180 42 V56" fill="none" class="accent-line" stroke-width="3.5" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M180 42 V56" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
 
   <rect x="110" y="64" width="140" height="32" rx="9" class="panel-strong" stroke-width="2"/>
   <text x="180" y="85" text-anchor="middle" class="label ink">EVIDENCE</text>
@@ -65,26 +65,26 @@
 
   <!-- All outcome paths merge before the sole arrow into RunTune. -->
   <path d="M64 151 V156 H180 M180 151 V156 M296 151 V156 H180" fill="none" class="line" stroke-width="2" stroke-linecap="round"/>
-  <path d="M180 156 V172" fill="none" class="accent-line" stroke-width="3.5" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M180 156 V172" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
 
   <rect x="115" y="180" width="130" height="42" rx="11" class="panel-strong" stroke-width="2"/>
   <text x="180" y="199" text-anchor="middle" class="label ink">RUNTUNE</text>
   <text x="180" y="214" text-anchor="middle" class="micro muted">derive · propose · measure</text>
 
   <!-- The next directed step intentionally lands on Human Approval to the left. -->
-  <path d="M180 222 V230 H105 V238" fill="none" class="accent-line" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M180 222 V230 H105 V238" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
   <rect x="40" y="246" width="130" height="42" rx="11" class="panel-warm" stroke-width="2"/>
   <text x="105" y="265" text-anchor="middle" class="label ink">HUMAN</text>
   <text x="105" y="280" text-anchor="middle" class="body ink">APPROVAL</text>
 
-  <path d="M170 267 H190" fill="none" class="accent-line" stroke-width="3.5" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M170 267 H190" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
   <rect x="198" y="246" width="122" height="42" rx="11" class="panel" stroke-width="2"/>
   <text x="259" y="265" text-anchor="middle" class="label ink">HARNESS</text>
   <text x="259" y="280" text-anchor="middle" class="micro muted">skills · agents · guards · routes</text>
 
   <!-- Approval and harness form one layer, then jointly shape future runs. -->
   <path d="M105 288 V296 H180 M259 288 V296 H180" fill="none" class="line" stroke-width="2" stroke-linecap="round"/>
-  <path d="M180 296 V308" fill="none" class="accent-line" stroke-width="3.5" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <path d="M180 296 V308" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
   <rect x="115" y="316" width="130" height="24" rx="11" class="panel-strong" stroke-width="2"/>
   <text x="180" y="332" text-anchor="middle" class="body ink">FUTURE RUNS</text>
   <text x="180" y="355" text-anchor="middle" class="eyebrow muted">TUNE THE HARNESS, NOT THE MODEL.</text>
