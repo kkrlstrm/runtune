@@ -28,6 +28,13 @@ It changes tomorrow's runtime based on what happened yesterday.
 No weight training, and no autonomous self-modification: RunTune proposes evidence-backed
 changes, and a human decides what enters the runtime.
 
+RunTune is the feedback loop of an [internal platform for GTM engineers](https://github.com/kkrlstrm/internal-gtm-platform).
+It reads what the agents actually did, proposes the narrowest change that would fix a repeated
+failure or capture a repeated success, and measures each approved change against a control. It
+was developed against about 238,000 recorded tool calls and model requests from one team's
+production agents, and its [evidence doc](docs/EVIDENCE.md) keeps the five recommendations that
+changed once checked against production.
+
 ## The loop, and what it tunes
 
 A coding agent is a model inside a harness: the skills it can load, the sub-agents it can spawn,
