@@ -8,7 +8,7 @@
 
 <p align="center">
   <picture>
-    <source media="(max-width: 600px)" srcset="docs/runtune-loop-mobile.svg?v=1068f32">
+    <source media="(max-width: 600px)" srcset="docs/runtune-loop-mobile.svg?v=5b942f0">
     <img src="docs/runtune-loop.svg" alt="RunTune's evidence-to-harness learning loop" width="600">
   </picture>
 </p>
