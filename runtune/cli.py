@@ -3,6 +3,7 @@
     runtune scan      what the evidence covers, per source, and where it has holes
     runtune derive    runs -> proposed constraints, capabilities, subagents, routes
     runtune stage     accept a proposal for review (writes drafts + evidence)
+    runtune verify    run a staged skill or sub-agent against control before anyone applies it
     runtune apply     a named human applies a staged artifact
     runtune review    measure every active artifact: keep / review / probe / retire / revalidate
     runtune retire    remove an artifact (a constraint retirement is a boundary change)
@@ -123,6 +124,55 @@ def cmd_stage(a):
     print(f"staged {art['id']} -> would write {art['target']}\n"
           f"drafts: {ws.root}/drafts/{art['id']}/  evidence: {ws.root}/{art['evidence']}")
     return 0
+
+
+def cmd_verify(a):
+    from . import verify
+    from .verify import selftest
+    if a.selftest:
+        return selftest.run(a.model, a.keep, host=a.host or "claude")
+    if not a.id:
+        print("verify needs an artifact id (or --selftest)", file=sys.stderr)
+        return 2
+    ws = Workspace(a.workspace)
+    try:
+        if a.init:
+            path = verify.init_tasks(ws, a.id, host=a.host)
+            doc = json.load(open(path))
+            drafted = sum(t.get("reviewed") is False for t in doc["tasks"])
+            print(f"wrote {path} (host {doc['host']}): "
+                  + (f"{drafted} task(s) drafted from recorded sessions; review each and set reviewed: true"
+                     if drafted else "write the tasks")
+                  + f", then `runtune verify {a.id}`")
+            for n in doc.get("_drafting_notes", [])[:5]:
+                print(f"  not drafted: {n}")
+            return 0
+        if a.static:
+            st = verify.static(ws, a.id, a.target_root, a.host)
+            for c in st["checks"]:
+                print(f"{'ok  ' if c['ok'] else 'FAIL'} {c['name']}: {c['detail']}")
+            return 0 if st["ok"] else 1
+        if a.live and not a.reason:
+            print("--live reaches real systems; it needs --reason (recorded in the ledger)", file=sys.stderr)
+            return 2
+        res = verify.run(ws, a.id, a.target_root, a.tasks, a.runs, a.jobs,
+                         live_reason=a.reason if a.live else None, keep=a.keep)
+    except verify.VerifyError as exc:
+        print(f"verify: {exc}", file=sys.stderr)
+        return 2
+    c, t = res["arms"]["control"], res["arms"]["treatment"]
+    print(f"\n{res['verdict'].upper()}  {a.id}")
+    for r in res["reasons"]:
+        print(f"  - {r}")
+    print(f"  control   {c['valid']}/{c['runs']} valid · correct {c['correct']}/{c['graded']} · new path {c['adopted']}")
+    print(f"  treatment {t['valid']}/{t['runs']} valid · correct {t['correct']}/{t['graded']} · new path {t['adopted']}")
+    spend = (f"${res['cost_usd']:.2f} list-price estimate" if res.get("host", "claude") == "claude" else
+             f"{res['host']} reports tokens, not cost: " + ", ".join(f"{k} {v:,}" for k, v in (res.get("tokens") or {}).items()
+                                                                  if "output" in k or k == "input_tokens"))
+    print(f"  {spend} · result: {res['path']}")
+    if res["verdict"] == "pass":
+        print(f"  apply with: runtune apply {a.id} --approve <name> --eval {res['path']}")
+    return 0 if res["verdict"] == "pass" else 1
 
 
 def cmd_apply(a):
@@ -539,13 +589,33 @@ def main(argv=None) -> int:
     p.add_argument("--revises")
     p.add_argument("--allow-withheld", action="store_true")
     p.add_argument("--reason")
+    p = sub.add_parser("verify", help="run a staged skill / sub-agent against control, in a contained "
+                                      "copy of the repo, before anyone applies it")
+    p.add_argument("id", nargs="?")
+    p.add_argument("--workspace", default=".runtune")
+    p.add_argument("--target-root", default=".")
+    p.add_argument("--init", action="store_true", help="write the task-file scaffold for this artifact")
+    p.add_argument("--static", action="store_true", help="only the free checks: no model runs")
+    p.add_argument("--tasks", help="task file (default .runtune/verify/<id>/tasks.json)")
+    p.add_argument("--runs", type=int, help="runs per arm per task (default: the task file, else 4)")
+    p.add_argument("-j", "--jobs", type=int, default=2, help="parallel runs (they share one rate limit)")
+    p.add_argument("--live", action="store_true",
+                   help="let runs reach the task file's live.network / env / read (needs --reason)")
+    p.add_argument("--reason")
+    p.add_argument("--keep", action="store_true", help="keep each run's directory for debugging")
+    p.add_argument("--selftest", action="store_true", help="prove the containment on this machine")
+    p.add_argument("--model", help="model for --selftest (default: the host's own default)")
+    p.add_argument("--host", choices=["claude", "codex", "cursor", "antigravity"],
+                   help="host to run: for --init and --selftest (a task file names its own; default: the "
+                        "host whose directory the target is in)")
     p = sub.add_parser("apply")
     p.add_argument("id")
     p.add_argument("--workspace", default=".runtune")
     p.add_argument("--approve", required=True, help="who is applying this (recorded in the ledger)")
     p.add_argument("--action", help="constraint action (monitor|nudge|deny|block), capped by tier")
     p.add_argument("--reason")
-    p.add_argument("--eval", help="path to a passing eval result (required to widen a route)")
+    p.add_argument("--eval", help="path to a passing eval result: required to widen a route; for a "
+                                  "capability or sub-agent, a `runtune verify` result (checked)")
     p = sub.add_parser("retire")
     p.add_argument("id")
     p.add_argument("--workspace", default=".runtune")

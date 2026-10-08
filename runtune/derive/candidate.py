@@ -49,6 +49,7 @@ class Candidate:
     numbers: dict = field(default_factory=dict)
     ladder: list = field(default_factory=list)      # [(rung, closes, why)]
     correction: list = field(default_factory=list)
+    samples: list = field(default_factory=list)     # recent attempts, one per session: verify drafts tasks from them
     preservation: list = field(default_factory=list)
     gates: list = field(default_factory=list)
     proposal: dict = field(default_factory=dict)

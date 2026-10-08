@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+- **`runtune verify`: run a proposal before anyone applies it.** A staged capability or
+  sub-agent runs headless on tasks you write, against control (the repository
+  as it is) and treatment (the draft overlaid), in a contained copy of the repository:
+  command shims, a fail-closed write hook, and the OS sandbox with `strictAllowlist`
+  (`bypassPermissions` otherwise lets the sandbox reach any host). Verdicts are Fisher-tested,
+  and the best reachable p is printed before any run is paid for. `--static` is free and
+  catches a skill naming a command that does not exist, which RunTune once shipped.
+  `--selftest` proves the containment on the current machine. `apply --eval` now validates a
+  verify result (verdict, artifact, draft digest, target digest) instead of accepting any file
+  for these kinds, and `require_verify` in `authority.json` makes one mandatory per kind.
+  See `docs/VERIFY.md`.
+- **Verify runs Codex, and has runners for Cursor and Antigravity.** The task file's `host`
+  picks the agent; `--static` fails when that host would never load the artifact's target.
+  Every non-Claude run gets its own home directory, so the user's MCP servers (whose
+  credentials `~/.codex/config.toml` can hold in plaintext), plugins, hooks and skills stay
+  out. Codex is contained by a Seatbelt permission profile (credential, `.env` and `.runtune`
+  reads denied, the real repository read-only, network off) and verified end to end: on the
+  demo repository the drafted skill took Codex to the CLI in 8 of 8 runs against 0 of 8
+  without it (p < 0.001), with every answer correct. Cursor and
+  Antigravity are built from their documented formats and are refused until `--selftest --host`
+  passes on the installed CLI version, as are Codex upgrades. The selftest now runs any probe a
+  model declines directly under the sandbox, without a model: Codex skipped every
+  exfiltration-shaped step and replied "DONE".
+- **A route's `--eval` must be about that route.** `apply` used to accept any file that
+  existed, so `{}` admitted a model to the allowlist. A route eval is now a small result the
+  eval harness writes (`runtune.route-eval/1`): it must name the same mode, candidate and
+  incumbent, say `pass`, report both scores (a pass below the incumbent needs a declared
+  non-inferiority margin), have scored at least `route_eval.min_cases` and be no older than
+  `route_eval.max_age_days` (`authority.json`; 20 and 30 by default). Its sha256 goes into
+  `routes.json` and the ledger. Re-clearing a stale mode now applies through the same check.
+- **`verify --init` drafts tasks from real sessions.** Capability samples keep their session,
+  and `--init` reads each sampled session back from the host's own transcript (Claude Code,
+  Codex, Cursor, Antigravity) for requests that led the agent straight to the old path: the
+  prompt, what the command printed and what the agent answered. Nothing is added to the event
+  store. A draft is held (`"reviewed": false`) until a person has read it. On one real
+  repository the filters left 4 drafts from 35 sessions: most inline calls happen deep inside
+  longer work, and most direct requests are follow-ups.
+
 - **Antigravity is a host.** `runtune record antigravity` backfills from the session
   transcripts under `~/.gemini/antigravity/brain`, incrementally. Its `run_command` is a shell
   surface everywhere shell evidence is read, so its failures can become constraints. The model
