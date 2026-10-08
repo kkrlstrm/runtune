@@ -101,6 +101,28 @@ Each proposal is compiled to the narrowest artifact that works: a rule if a rule
 sub-agent only if a skill won't. Each proposal also records why the narrower options were
 rejected.
 
+## Run it before you apply it
+
+A staged skill or sub-agent can be run before anyone approves it. `runtune verify` runs the
+agent headless (Claude Code or Codex; Cursor and Antigravity once their selftest passes) on
+tasks drafted from your own sessions or written by you, once against the repository as it is
+and once with the draft in place, in a contained copy of the repository: no network,
+credentials unreadable, nothing written to the real repo. It reports `pass`, `no-effect`, `fail` or `inconclusive`, tested with
+Fisher's exact test, and tells you before it starts whether your run count can reach
+significance at all.
+
+```bash
+runtune verify <id> --static     # free: do the commands the skill names exist?
+runtune verify --selftest --host codex   # prove the containment for a host on this machine
+runtune verify <id> --init       # task file, with tasks drafted from recorded sessions to review
+runtune verify <id>              # control vs treatment
+runtune apply <id> --approve alice --eval .runtune/verify/<id>/result-<ts>.json
+```
+
+`apply` accepts a result only for the exact draft that passed, against an unchanged target. A
+route's `--eval` must be a result about that mode, that candidate and the model it replaces.
+[How verify works and what it cannot tell you →](docs/VERIFY.md)
+
 ## Why it can't run away
 
 - **There is one write boundary.** The promoter is the only RunTune component that changes the
@@ -114,6 +136,9 @@ rejected.
 - **It can't widen its own boundaries.** Loosening a rule, broadening a tool grant, or admitting
   a model needs a written reason, and for models a passing eval. None of these can be approved
   with a one-word reply.
+- **A test result is tied to what it tested.** A `runtune verify` result passed to `apply`
+  must be a pass, for that artifact, for that exact draft, against that version of the target.
+  `require_verify` in `authority.json` makes one mandatory for skills and sub-agents.
 - **Its evidence sets a ceiling.** A failure that happens 30% of the time can earn a nudge, never
   a block.
 - **It only edits what it wrote.** It never overwrites a file a person wrote, and it refuses a

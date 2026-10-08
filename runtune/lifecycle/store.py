@@ -5,6 +5,7 @@
       evidence/<sha8>.md        content-addressed, redacted evidence — never named by a model
       artifacts/<id>.json       one record per staged/active/retired artifact
       drafts/<id>/              the files an artifact would write, for a human to read
+      verify/<id>/              task file, static checks and results of `runtune verify`
       ledger.jsonl              hash-chained lifecycle decisions
       authority.json            what may be applied, by whom, in which direction
 
@@ -28,7 +29,10 @@ from . import ledger
 DEFAULT_AUTHORITY = {
     "_readme": "What RunTune may write. The learner proposes; a named human applies. "
                "Widening (a looser constraint, a broader grant, a new model on the allowlist) "
-               "is never applied without --approve AND a reason; routes also need --eval.",
+               "is never applied without --approve AND a reason; routes also need --eval. "
+               "require_verify lists kinds (capability, subagent) that also need a passing "
+               "`runtune verify` result passed as --eval. route_eval sets what a route's --eval "
+               "must show: at least min_cases scored, no older than max_age_days.",
     "targets": {
         "constraint": "rules/runtune.rules.json",
         "capability": ".claude/skills",
@@ -38,6 +42,8 @@ DEFAULT_AUTHORITY = {
     "protected": [".claude/settings.json", ".claude/settings.local.json", ".codex/config.toml",
                   "hooks/", ".git/"],
     "auto_apply": [],
+    "require_verify": [],
+    "route_eval": {"min_cases": 20, "max_age_days": 30},
 }
 
 

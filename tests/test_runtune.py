@@ -279,10 +279,21 @@ class Governance(unittest.TestCase):
             promoter.apply(self.ws, self.challenger, "alice", reason="cheaper")     # no eval
         ev = os.path.join(self.root, "eval.json")
         open(ev, "w").write("{}")
+        with self.assertRaises(promoter.Refused) as cm:                             # any file is not an eval
+            promoter.apply(self.ws, self.challenger, "alice", reason="cheaper", eval_ref=ev)
+        self.assertIn("not a route eval result", str(cm.exception))
+        self.assertEqual(json.load(open(routes_path))["modes"]["extract"]["model"], "deepseek/v4-flash")
+        json.dump({"schema": "runtune.route-eval/1", "mode": "extract", "candidate": "qwen/cheap",
+                   "incumbent": "deepseek/v4-flash", "verdict": "pass", "cases": 40,
+                   "candidate_score": 0.91, "incumbent_score": 0.90,
+                   "created": datetime.now(timezone.utc).isoformat()}, open(ev, "w"))
         promoter.apply(self.ws, self.challenger, "alice", reason="cheaper", eval_ref=ev)
-        self.assertEqual(json.load(open(routes_path))["modes"]["extract"]["model"], "qwen/cheap")
+        mode = json.load(open(routes_path))["modes"]["extract"]
+        self.assertEqual(mode["model"], "qwen/cheap")
+        self.assertEqual(len(mode["runtune_eval_digest"]), 64)
         events = ledger.read(self.ws.ledger_path)
-        self.assertTrue(any(e.get("boundary_change") for e in events if e["action"] == "apply"))
+        self.assertTrue(any(e.get("boundary_change") and e.get("eval_digest") for e in events
+                            if e["action"] == "apply"))
 
     def test_protected_paths(self):
         auth = self.ws.authority()

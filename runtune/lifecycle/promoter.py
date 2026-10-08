@@ -11,7 +11,9 @@ WITHOUT the learner being able to rewrite its own safety boundaries.
      clearance) needs an approver. WIDENING — removing or weakening a
      constraint, broadening a grant, admitting a model to the allowlist — needs
      an approver AND a written reason, is logged as a boundary change, and for
-     routes needs a passing eval on file.
+     routes needs a passing eval on file. A capability or sub-agent applied with
+     --eval needs a `runtune verify` result that passed for that exact draft
+     (`require_verify` in authority.json makes it mandatory per kind).
   3. CEILINGS. A constraint is never armed beyond what its evidence tier allows.
   4. OWNERSHIP. RunTune overwrites only files it created (it marks them); a
      human-written skill or agent is revised in place only through an explicit,
@@ -30,6 +32,8 @@ import re
 import shutil
 from datetime import date, datetime, timedelta, timezone
 
+from .. import verify
+from ..verify import route_eval
 from ..evidence import tiers
 from . import ledger
 from .store import Workspace, file_digest
@@ -107,6 +111,16 @@ def apply(ws: Workspace, aid: str, approver: str, action: str | None = None,
         raise Refused("this proposal WIDENS what agents may do; applying it needs --reason")
     kind = art["kind"]
     cand = art["candidate"]
+    eval_digest = None
+    if kind in ("capability", "subagent") and (eval_ref or kind in auth.get("require_verify", [])):
+        # A verify result is evidence about ONE draft against ONE version of the target. An
+        # --eval given is always checked, required or not: a wrong file is refused, not ignored.
+        if not eval_ref:
+            raise Refused(f"authority.json requires a passing `runtune verify` for a {kind}; "
+                          f"pass --eval <.runtune/verify/{aid}/result-*.json>")
+        problems = verify.check(art, eval_ref)
+        if problems:
+            raise Refused(f"--eval {eval_ref}: " + "; ".join(problems))
 
     if kind == "constraint":
         rule = dict(cand["proposal"]["ruleset_rule"])
@@ -127,7 +141,7 @@ def apply(ws: Workspace, aid: str, approver: str, action: str | None = None,
         else:
             raise Refused("lint findings are fixed by hand; there is nothing to apply")
     elif kind == "route":
-        _apply_route(art, eval_ref)
+        eval_digest = _apply_route(art, eval_ref, auth.get("route_eval"))
     else:
         raise Refused(f"unknown kind {kind}")
 
@@ -136,7 +150,8 @@ def apply(ws: Workspace, aid: str, approver: str, action: str | None = None,
                applied_action=action, eval_ref=eval_ref, applied_digest=file_digest(art["target"]))
     ws.put(art)
     ledger.append(ws.ledger_path, {"action": "apply", "id": aid, "approver": approver,
-                                   "boundary_change": widen, "reason": reason, "eval_ref": eval_ref})
+                                   "boundary_change": widen, "reason": reason, "eval_ref": eval_ref,
+                                   **({"eval_digest": eval_digest} if eval_digest else {})})
     return art
 
 
@@ -315,21 +330,41 @@ def _revise_agent_grant(path, grant, aid):
         f.write(text.rstrip("\n") + f"\n<!-- {MARK}:{aid} (grant narrowed from: {', '.join(sorted(old))}) -->\n")
 
 
-def _apply_route(art, eval_ref):
+def _route_eval(req: dict, eval_ref: str | None, policy: dict | None, what: str) -> str:
+    """Refuse unless `eval_ref` is a route eval about exactly this change. -> its digest."""
+    if not eval_ref:
+        raise Refused(f"{what} needs --eval <a route eval result>; see docs/VERIFY.md")
+    problems = route_eval.check(req, eval_ref, policy)
+    if problems:
+        raise Refused(f"--eval {eval_ref}: " + "; ".join(problems))
+    return route_eval.digest(eval_ref)
+
+
+def _apply_route(art, eval_ref, policy=None) -> str | None:
+    """Carry out a route finding. -> the digest of the eval it rested on, if any."""
     prop = art["candidate"].get("proposal", {})
     path = art["target"]
-    if prop.get("eval_request"):
-        if not eval_ref or not os.path.exists(eval_ref):
-            raise Refused("admitting a model to a mode needs --eval <path to a passing eval result>")
+    if prop.get("eval_request") or prop.get("revalidate_mode"):
         with open(path) as f:
             data = json.load(f)
-        req = prop["eval_request"]
+        if prop.get("eval_request"):
+            req = prop["eval_request"]
+            dg = _route_eval(req, eval_ref, policy, "admitting a model to a mode")
+        else:
+            current = (data.get("modes", {}).get(prop["revalidate_mode"]) or {}).get("model")
+            if not current:
+                raise Refused(f"mode {prop['revalidate_mode']} is not in {path}")
+            # re-clearing the model a mode already runs: the eval scores it against itself
+            # or against any reference model; the candidate must be the current model
+            req = {"mode": prop["revalidate_mode"], "candidate": current, "incumbent": None}
+            dg = _route_eval(req, eval_ref, policy, "re-clearing a stale mode")
         mode = data.setdefault("modes", {}).setdefault(req["mode"], {})
-        mode.update(model=req["candidate"], verified_date=date.today().isoformat(),
-                    runtune_eval_ref=eval_ref, runtune_previous_model=req["incumbent"])
+        mode.update(verified_date=date.today().isoformat(), runtune_eval_ref=eval_ref, runtune_eval_digest=dg)
+        if prop.get("eval_request"):
+            mode.update(model=req["candidate"], runtune_previous_model=req["incumbent"])
         with open(path, "w") as f:
             json.dump(data, f, indent=2)
-        return
+        return dg
     if prop.get("retire_mode"):
         with open(path) as f:
             data = json.load(f)

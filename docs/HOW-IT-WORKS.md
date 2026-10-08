@@ -62,7 +62,8 @@ Withheld candidates are always reported with the gate that stopped them, so a re
 1. **No approver.** Every apply records a named person. No code path runs from `derive` to a target file.
 2. **Widening without a reason.** This covers retiring a constraint, broadening a tool grant, or
    admitting a model to a mode. It needs `--reason` and is logged as a boundary change. Routes
-   also need `--eval` pointing at a passing eval result.
+   also need `--eval`: a route eval result for this mode, this candidate and the model it
+   replaces, recent enough and with enough cases (see [VERIFY.md](VERIFY.md#route-evals)).
 3. **Past the tier's ceiling.** `block` on a probabilistic failure is refused.
 4. **Someone else's file.** RunTune overwrites only files it created and marked. A revision
    declares its lineage with `--revises` and inherits every predecessor's cases, so a fix can't
@@ -70,8 +71,12 @@ Withheld candidates are always reported with the gate that stopped them, so a re
 5. **A stale target.** A proposal reviewed against one version of a file is refused against
    the next one.
 6. **Protected paths.** Host settings, hook wiring and `.git/` are never written.
+7. **A verify result that does not match.** For a capability or sub-agent, any `--eval` must
+   be a `runtune verify` result with verdict `pass`, for this artifact, for the current draft,
+   against the current target. Kinds listed in `require_verify` cannot be applied without one.
+   See [VERIFY.md](VERIFY.md).
 
-Every stage, apply and retire goes into a hash-chained ledger (`runtune ledger`).
+Every stage, verify, apply and retire goes into a hash-chained ledger (`runtune ledger`).
 
 ## 5. Measurement: three errors it guards against
 

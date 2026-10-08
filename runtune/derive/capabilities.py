@@ -111,6 +111,7 @@ def derive_inline(corpus, min_events: int = MIN_EVENTS) -> tuple[list, list]:
                 ("subagent", False, "not needed — nothing here needs isolated state or its own context"),
             ],
             correction=[_sample(e) for e in evs[:3]],
+            samples=_recent(evs),
             requires=["human-review"],
         )
         c.gate("breadth", reuse != tiers.LOCAL,
@@ -235,4 +236,18 @@ def derive_procedures(corpus, top: int = 10) -> tuple[list, list]:
 
 
 def _sample(e) -> dict:
-    return {"source": e.source, "ts": e.ts.isoformat(), "text": e.text[:240], "ok": e.ok}
+    return {"source": e.source, "session": e.session, "actor": e.actor, "ts": e.ts.isoformat(),
+            "text": e.text[:240], "ok": e.ok}
+
+
+def _recent(evs, n: int = 20) -> list:
+    """The newest root-agent attempt from each of the `n` most recent sessions: the
+    requests `verify --init` drafts tasks from, while their transcripts still exist."""
+    out, seen = [], set()
+    for e in sorted(evs, key=lambda e: e.ts, reverse=True):
+        if e.actor == "root" and e.session not in seen:
+            seen.add(e.session)
+            out.append(_sample(e))
+        if len(out) >= n:
+            break
+    return out
