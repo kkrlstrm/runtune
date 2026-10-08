@@ -28,7 +28,7 @@
       .branch-drift { fill: #2c2843; stroke: #8073bd; }
     }
     text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    .eyebrow { font-size: 9px; font-weight: 700; letter-spacing: .9px; }
+    .eyebrow { font-size: 7.3px; font-weight: 700; letter-spacing: .35px; }
     .label { font-size: 13px; font-weight: 750; letter-spacing: .5px; }
     .branch-label { font-size: 12px; font-weight: 750; letter-spacing: .35px; }
     .body { font-size: 10px; font-weight: 500; }
@@ -41,7 +41,7 @@
   </defs>
 
   <!-- Future Runs begins the return path, which stays outside all labels. -->
-  <path d="M245 344 H352 Q356 344 356 340 V26 Q356 26 352 26 H266" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
+  <path d="M245 339 H352 Q356 339 356 335 V26 Q356 26 352 26 H266" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow)"/>
 
   <rect x="100" y="10" width="160" height="32" rx="9" class="panel" stroke-width="2"/>
   <text x="180" y="31" text-anchor="middle" class="label ink">REAL AGENT RUNS</text>
@@ -76,20 +76,20 @@
   <rect x="113" y="235" width="134" height="28" rx="9" class="panel" stroke-width="2"/>
   <text x="180" y="247" text-anchor="middle" class="branch-label ink">VERIFY</text>
   <text x="180" y="257" text-anchor="middle" class="micro muted">tests · quality · cost</text>
-  <path d="M180 263 V270 H105 V278" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
-  <rect x="40" y="282" width="130" height="42" rx="11" class="panel-warm" stroke-width="2"/>
-  <text x="105" y="299" text-anchor="middle" class="label ink">HUMAN</text>
-  <text x="105" y="312" text-anchor="middle" class="body ink">APPROVAL</text>
+  <path d="M180 263 V267 H105 V274" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="40" y="278" width="130" height="40" rx="11" class="panel-warm" stroke-width="2"/>
+  <text x="105" y="294" text-anchor="middle" class="label ink">HUMAN</text>
+  <text x="105" y="307" text-anchor="middle" class="body ink">APPROVAL</text>
 
-  <path d="M170 303 H190" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
-  <rect x="198" y="282" width="122" height="42" rx="11" class="panel" stroke-width="2"/>
-  <text x="259" y="265" text-anchor="middle" class="label ink">HARNESS</text>
-  <text x="259" y="280" text-anchor="middle" class="micro muted">skills · agents · guards · routes</text>
+  <path d="M170 298 H190" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="198" y="278" width="122" height="40" rx="11" class="panel" stroke-width="2"/>
+  <text x="259" y="294" text-anchor="middle" class="label ink">HARNESS</text>
+  <text x="259" y="307" text-anchor="middle" class="micro muted">skills · agents · guards · routes</text>
 
   <!-- Approval and harness form one layer, then jointly shape future runs. -->
-  <path d="M105 324 V329 H180 M259 324 V329 H180" fill="none" class="line" stroke-width="2" stroke-linecap="round"/>
-  <path d="M180 329 V333" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
-  <rect x="115" y="336" width="130" height="16" rx="11" class="panel-strong" stroke-width="2"/>
-  <text x="180" y="347" text-anchor="middle" class="body ink">FUTURE RUNS</text>
-  <text x="180" y="359" text-anchor="middle" class="eyebrow muted">TUNE THE HARNESS, NOT THE MODEL.</text>
+  <path d="M105 318 V324 H180 M259 318 V324 H180" fill="none" class="line" stroke-width="2" stroke-linecap="round"/>
+  <path d="M180 324 V327" fill="none" class="accent-line" stroke-width="2.25" stroke-linecap="round" marker-end="url(#arrow)"/>
+  <rect x="115" y="330" width="130" height="18" rx="11" class="panel-strong" stroke-width="2"/>
+  <text x="180" y="343" text-anchor="middle" class="body ink">FUTURE RUNS</text>
+  <text x="180" y="356" text-anchor="middle" class="eyebrow muted">TUNE THE HARNESS, NOT THE MODEL.</text>
 </svg>
