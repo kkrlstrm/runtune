@@ -507,6 +507,15 @@ class Hosts(unittest.TestCase):
         self.assertIn("137", r.results[r.uses[0]["id"]])
 
     def test_project_files_that_widen_a_run_are_removed_from_its_copy(self):
+        for farm in ("clone", "link"):
+            with self.subTest(farm=farm):
+                os.environ["RUNTUNE_VERIFY_FARM"] = farm
+                try:
+                    self._removed_from_copy_only()
+                finally:
+                    os.environ.pop("RUNTUNE_VERIFY_FARM", None)
+
+    def _removed_from_copy_only(self):
         from runtune.verify import hosts as H
         repo = tempfile.mkdtemp()
         os.makedirs(os.path.join(repo, ".cursor"))

@@ -173,7 +173,9 @@ class Antigravity(Host):
             json.dump(hooks_json(state, real["python3"]), f, indent=2)
         removed = [rel for rel in PROJECT_OVERRIDES if os.path.lexists(os.path.join(kit["proj"], rel))]
         for rel in removed:
-            os.unlink(os.path.join(kit["proj"], rel))
+            # through _place: in a symlink farm the parent directory is a link into the REAL
+            # repository, and a plain unlink would delete the real file (CI caught it on Linux)
+            sandbox._place(kit["proj"], real_root, rel, None)
         env = {"HOME": home, "TMPDIR": os.path.join(run, "tmp")}
         if os.environ.get("GEMINI_API_KEY"):
             env["GEMINI_API_KEY"] = os.environ["GEMINI_API_KEY"]
