@@ -13,8 +13,11 @@
   </picture>
 </p>
 
-RunTune is a runtime learning loop for coding agents. It turns real Claude Code, Codex, Cursor,
-Antigravity and model-router runs into governed changes to the system around them.
+RunTune is a runtime learning loop for coding agents. It brings evidence from Claude Code,
+Codex, Cursor, Google Antigravity and model-router traffic into a common process for improving
+the harness around them. Different agents produce different traces; RunTune turns their repeated
+successes and failures into proposed capabilities, constraints and routes, then verifies and
+measures approved changes.
 
 - **Success → capability.** Working patterns that repeat become skills, CLI paths, specialized
   sub-agents, or better routes.
@@ -129,6 +132,20 @@ runtune apply <id> --approve alice --eval .runtune/verify/<id>/result-<ts>.json
 `apply` accepts a result only for the exact draft that passed, against an unchanged target. A
 route's `--eval` must be a result about that mode, that candidate and the model it replaces.
 [How verify works and what it cannot tell you →](docs/VERIFY.md)
+
+## Learning without overfitting
+
+A harness change that passes a test isn't necessarily an improvement. Repeatedly testing
+proposals against the same tasks can make the harness better at passing those tests without
+making it better at real work.
+
+RunTune is adding regularized experiments to address this: separating development, regression
+and held-out tasks; comparing candidates against a frozen baseline; considering quality and
+cost together; and recording hypotheses and their outcomes.
+
+These experimental foundations are implemented but **not yet wired into the CLI or production
+promotion policy**. The existing verification, approval and deployment boundaries remain
+authoritative. [Experimental design and current limitations →](docs/EXPERIMENTS.md)
 
 ## Why it can't run away
 
