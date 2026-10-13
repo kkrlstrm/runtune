@@ -51,6 +51,9 @@ def stage(ws: Workspace, cid: str, target_root: str = ".", revises: str | None =
     cand = ws.find_candidate(cid)
     if not cand:
         raise Refused(f"no candidate {cid} in {ws.root}/candidates")
+    if cand["kind"] == "environment":
+        raise Refused(f"{cid} is an environment finding: there is no artifact to stage — the fix belongs on the "
+                      "machine. Approve it in a digest to record it as done by hand.")
     if not cand.get("admitted") and not allow_withheld:
         failed = [g["name"] for g in cand.get("gates", []) if not g["passed"] and not g["suppressed"]]
         raise Refused(f"{cid} was withheld by gate(s) {failed}; pass --allow-withheld with --reason to stage anyway")

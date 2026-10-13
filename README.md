@@ -106,6 +106,7 @@ the deployment boundary. [Channels and deployment →](docs/CHANNELS.md)
 | repeated success | **capability** | a `SKILL.md` naming the commands that have worked, for code agents keep re-deriving |
 | isolated, repeated work | **sub-agent** | a purpose-built agent type, granted exactly the tools its predecessors used |
 | approved vs. ran vs. billed | **route** | a routing check or a retired clearance; a cheaper model always requires an eval first |
+| one error across many commands | **environment** | nothing: a finding for a person, because the fix is on the machine (a broken interpreter, a missing binary), not in the agent's rules |
 
 Each proposal is compiled to the narrowest artifact that works: a rule if a rule will do, a
 sub-agent only if a skill won't. Each proposal also records why the narrower options were

@@ -218,3 +218,213 @@ def inline_target(command: str | None) -> str | None:
     root = sorted(targets, key=lambda r: -len(targets[r]))[0]
     subs = sorted(n for n in targets[root] if n.isidentifier())[:6]
     return f"{root}:{','.join(subs)}" if subs else root
+
+
+# --------------------------------------------------------------------------- #
+# Exit-status attribution — which part of a compound command a failure belongs to.
+#
+# A shell call reports ONE exit status for the whole line. In `a | head; echo ===; b`
+# that status is b's, so keying the failure on `a` (the head) blames a command that
+# succeeded: the "error" recorded for it is just its normal output. These helpers find
+# the part whose status the call reports, or say that it cannot be told.
+
+_CONTROL_WORDS = {"for", "while", "until", "if", "case", "select", "function", "do", "done",
+                  "then", "else", "elif", "fi", "esac", "{", "}", "(", ")"}
+# Segments that set up a command rather than do work. A leading `cd x &&` is not
+# where a failure of the line comes from in practice.
+_SETUP_HEADS = {"cd", "pushd", "export", "set", "unset", "source", ".", "umask", "ulimit", "true"}
+_HEREDOC = re.compile(r"<<(-?)\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
+
+
+def split_top_level(command: str) -> tuple[list[tuple[str, str | None]], bool]:
+    """Split a command line on its top-level operators. -> ([(segment, operator_after)], clean)
+
+    Operators: `;` newline `&&` `||` `|` `&`. Quotes, `$( )`, backticks, comments,
+    line continuations and heredoc bodies are never split. `clean` is False when the
+    text ends inside an open quote or substitution (a truncated recording)."""
+    s = command or ""
+    segs, buf, i, n = [], [], 0, len(s)
+    stack: list[str] = []          # "'", '"', "`", "$("
+    depth: list[int] = []          # paren depth inside each "$(" frame
+    pending: list[tuple[str, bool]] = []   # heredoc delimiters waiting for the next newline
+
+    def cut(op):
+        segs.append(("".join(buf), op))
+        buf.clear()
+
+    while i < n:
+        ch, top = s[i], (stack[-1] if stack else None)
+        if top == "'":
+            buf.append(ch)
+            if ch == "'":
+                stack.pop()
+            i += 1
+            continue
+        if ch == "\\" and i + 1 < n:
+            if s[i + 1] == "\n" and top is None:      # line continuation
+                i += 2
+                continue
+            buf.append(s[i:i + 2])
+            i += 2
+            continue
+        if top == '"':
+            if ch == '"':
+                stack.pop()
+            elif s.startswith("$(", i):
+                stack.append("$(")
+                depth.append(0)
+                buf.append("$(")
+                i += 2
+                continue
+            elif ch == "`":
+                stack.append("`")
+            buf.append(ch)
+            i += 1
+            continue
+        if top == "`":
+            buf.append(ch)
+            if ch == "`":
+                stack.pop()
+            i += 1
+            continue
+        # top is None or "$(": quotes and substitutions open; only top level splits
+        if ch in ("'", '"', "`"):
+            stack.append(ch)
+            buf.append(ch)
+            i += 1
+            continue
+        if s.startswith("$(", i):
+            stack.append("$(")
+            depth.append(0)
+            buf.append("$(")
+            i += 2
+            continue
+        if top == "$(":
+            if ch == "(":
+                depth[-1] += 1
+            elif ch == ")":
+                if depth[-1] == 0:
+                    stack.pop()
+                    depth.pop()
+                else:
+                    depth[-1] -= 1
+            buf.append(ch)
+            i += 1
+            continue
+        # ---- top level
+        if ch == "#" and (not buf or buf[-1][-1:].isspace()):
+            j = s.find("\n", i)
+            i = n if j < 0 else j
+            continue
+        if s.startswith("<<", i) and not s.startswith("<<<", i):
+            m = _HEREDOC.match(s, i)
+            if m:
+                pending.append((m.group(3), m.group(1) == "-"))
+                buf.append(m.group(0))
+                i = m.end()
+                continue
+        if ch == "\n":
+            if pending:                                   # skip heredoc bodies
+                j = i + 1
+                for delim, dash in pending:
+                    while j < n:
+                        k = s.find("\n", j)
+                        line = s[j:] if k < 0 else s[j:k]
+                        j = n if k < 0 else k + 1
+                        if (line.lstrip("\t") if dash else line).strip() == delim:
+                            break
+                buf.append(s[i:j])
+                pending.clear()
+                i = j
+                if i >= n:
+                    break
+                cut("\n")
+                continue
+            cut("\n")
+            i += 1
+            continue
+        two = s[i:i + 2]
+        if two in ("&&", "||"):
+            cut(two)
+            i += 2
+            continue
+        if two == "|&":
+            cut("|")
+            i += 2
+            continue
+        if ch == "|":
+            cut("|")
+            i += 1
+            continue
+        if ch == ";":
+            cut(";")
+            i += 1
+            continue
+        if ch == "&":
+            prev = buf[-1][-1:] if buf else ""
+            if prev in (">", "<") or s[i + 1:i + 2] == ">":    # 2>&1, >&2, &> — a redirect
+                buf.append(ch)
+                i += 1
+                continue
+            cut("&")
+            i += 1
+            continue
+        buf.append(ch)
+        i += 1
+    if buf:
+        cut(None)
+    clean = not stack
+    return [(t.strip(), op) for t, op in segs if t.strip()], clean
+
+
+def status_command(command: str | None, truncated: bool = False) -> str | None:
+    """The part of `command` whose exit status the call reports, or None when it cannot be told.
+
+    `;`/newline lists: the last one. A pipeline: its last element (no pipefail). An
+    `&&`/`||` chain: unknown — any link may have failed — unless every link before the
+    last only sets up (`cd x &&`). Loops, conditionals, groups and a backgrounded tail
+    are unknown. A truncated recording that shows more than one part is unknown, since
+    the part that decided the status may be cut off."""
+    segs, _ = split_top_level(command or "")
+    if not segs or segs[-1][1] == "&":
+        return None
+    if len(segs) == 1:
+        return segs[0][0]
+    if truncated:
+        return None
+    for text, _ in segs:
+        toks = text.split()
+        if toks and (toks[0] in _CONTROL_WORDS or toks[0].startswith(("(", "{"))):
+            return None
+    start = 0
+    for k in range(1, len(segs)):
+        if segs[k - 1][1] in (";", "\n", "&"):
+            start = k
+    last = segs[start:]
+    pipelines, cur = [], []
+    for text, op in last:
+        cur.append(text)
+        if op in ("&&", "||"):
+            pipelines.append(cur)
+            cur = []
+    pipelines.append(cur)
+    while len(pipelines) > 1 and len(pipelines[0]) == 1 and _is_setup(pipelines[0][0]):
+        pipelines.pop(0)
+    if len(pipelines) > 1:
+        return None
+    return pipelines[0][-1]
+
+
+def _is_setup(text: str) -> bool:
+    toks = text.split()
+    if not toks:
+        return True
+    if all(_ENV_ASSIGN.match(t) for t in toks):
+        return True
+    return toks[0] in _SETUP_HEADS
+
+
+def status_shape(surface: str, command: str | None, truncated: bool = False) -> str | None:
+    """`command_shape` of the part the exit status belongs to; None when that cannot be told."""
+    part = status_command(command, truncated)
+    return None if part is None else command_shape(surface, part)

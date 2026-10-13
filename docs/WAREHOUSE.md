@@ -4,6 +4,11 @@ You don't need a warehouse: `runtune record claude|codex|cursor` and the hook wr
 If you already store agent telemetry in Postgres, point `--db` (or `$RUNTUNE_DB_URL`) at it
 and RunTune reads these tables in a read-only session. Give it a SELECT-only role.
 
+A table or column a source needs and the warehouse lacks turns that source into a coverage
+note and a warning; the other sources still load. `agent_invocations` is optional, and so is
+its `token_source` column (an older cc-logger has neither): the tool-call evidence is read
+either way, and the report says that sub-agent token figures were not used.
+
 ## Claude Code (cc-logger schema, as recorded by CallusGuard's recorder)
 
 | table | columns read |

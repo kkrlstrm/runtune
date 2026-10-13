@@ -28,6 +28,14 @@ What it adds:
   * LOW-SIGNAL HEADS (`cd`, `for`, `set`, …) are a failed gate with a reason, not a
     silent filter: callusguard's funnel showed these are real clusters and
     worthless rules, and the reviewer should see that they were considered.
+  * EXIT-STATUS ATTRIBUTION. A shell failure is keyed on the part of the command
+    whose status the call reported (`a | head; b` -> b), not on its first command.
+    Keyed on the head, `report.py | head; echo ===; …` filed the report's normal
+    output as its error and proposed a rule against a command that had worked. A
+    failure whose part cannot be told (`a && b`, a loop) is reported as withheld.
+  * ONE CAUSE, MANY COMMANDS. An error shared by >= 3 different commands (a broken
+    interpreter, a missing binary on PATH) is one ENVIRONMENT finding, not one rule
+    per command: no rule on a command fixes the machine.
 """
 
 from __future__ import annotations
@@ -49,10 +57,42 @@ MIN_SESSIONS = 2
 # promoted callusguard rule needed (`\bpsql\b` -> a bare-invocation pattern).
 MAX_COLLATERAL = 0.98
 NARROW_ABOVE = 0.50
+# An error signature shared by this many different commands is an environment cause.
+ENV_MIN_COMMANDS = 3
 
 
 def surface_family(ev) -> str:
     return "shell" if ev.surface in SHELL_SURFACES else shapes.command_shape(ev.surface, "")
+
+
+def cluster_key(ev) -> tuple[str, str | None]:
+    """(surface, shape) a failure is counted under. For the shell, the shape of the part
+    whose exit status the call reported; None when that cannot be told."""
+    fam = surface_family(ev)
+    if fam != "shell":
+        return fam, ev.shape
+    return fam, shapes.status_shape(ev.surface, ev.text, truncated=ev.chars > len(ev.text))
+
+
+def environment_signature(error: str) -> str | None:
+    """The part of a normalized error that can name a machine-level cause, or None.
+
+    The exit-code prefix and the shell's own location prefix (`/P:`, `(eval):#:`) say
+    nothing, and two shells printing the same cause would otherwise split it. A traceback
+    head and a usage line are shared by unrelated failures; a warning line
+    (`notopensslwarning …`) is printed on success too; and a harness timeout means each
+    command was slow, not that something on the machine is broken. What is left must
+    read as an error: a failed chain can record a file's normal contents as its "error"."""
+    s = re.sub(r"^exit code #\s*", "", error or "").strip()
+    s = re.sub(r"^(?:(?:/P|\(eval\))(?::#)?:?\s+)+", "", s, flags=re.I).strip()
+    if (len(s) < 20 or s.startswith(("traceback", "usage")) or "warning" in s[:60]
+            or re.search(r"\btimed out\b", s) or not _ERRORISH.search(s)):
+        return None
+    return s[:120]
+
+
+_ERRORISH = re.compile(r"error|not found|unable|cannot|can't|denied|failed|no such|missing|invalid|"
+                       r"unexpected|refused|not recognized|not installed", re.I)
 
 
 def candidate_pattern(shape: str) -> str | None:
@@ -98,18 +138,38 @@ def derive(corpus, min_fails: int = MIN_FAILS, min_sessions: int = MIN_SESSIONS,
     suppress = suppress or set()
     tool_events = [e for e in corpus.events if e.kind == "tool"]
     shell_events = [e for e in tool_events if e.surface in SHELL_SURFACES]
-    attempts = Counter((surface_family(e), e.shape) for e in tool_events)
-    shape_ok = Counter((surface_family(e), e.shape) for e in tool_events if e.ok)
+    keys = {id(e): cluster_key(e) for e in tool_events}
+    attempts = Counter(keys[id(e)] for e in tool_events)
+    shape_ok = Counter(keys[id(e)] for e in tool_events if e.ok)
+    failures = [e for e in tool_events if not e.ok]
+
+    out, withheld = [], []
+    explained = _environment(failures, keys, min_fails, min_sessions, suppress, out, withheld)
 
     # One candidate per (surface, shape): the rule it compiles to is the same regex
     # whatever the error text, so splitting by signature would propose one rule many
     # times. The signatures are kept inside the candidate as its breakdown.
     clusters = defaultdict(list)
-    for e in tool_events:
-        if not e.ok:
-            clusters[(surface_family(e), e.shape)].append(e)
+    unattributed = []
+    for e in failures:
+        if id(e) in explained:
+            continue
+        surface, shape = keys[id(e)]
+        if shape is None:
+            unattributed.append(e)
+        else:
+            clusters[(surface, shape)].append(e)
+    if len(unattributed) >= min_fails:
+        u = Candidate(
+            kind="constraint", key="shell|(unattributed)",
+            title=f"shell: {len(unattributed)} failed compound commands could not be pinned to one command",
+            claim="the exit status of an `&&` chain, a loop or a truncated recording does not say which part "
+                  "failed, so these failures are not counted against any command",
+            tier=tiers.ANECDOTAL, sources=sorted({e.source for e in unattributed}),
+            numbers={"fails": len(unattributed)}, correction=[_sample(e) for e in unattributed[:3]])
+        u.gate("attribution", False, "the failing part of the command cannot be identified")
+        withheld.append(u)
 
-    out, withheld = [], []
     for (surface, shape), fails in sorted(clusters.items(), key=lambda kv: -len(kv[1])):
         if len(fails) < min_fails:
             continue
@@ -198,6 +258,47 @@ def derive(corpus, min_fails: int = MIN_FAILS, min_sessions: int = MIN_SESSIONS,
 def _sample(e) -> dict:
     return {"source": e.source, "ts": e.ts.isoformat(), "text": e.text[:240],
             "error": e.error[:160], "ok": e.ok}
+
+
+def _environment(failures, keys, min_fails, min_sessions, suppress, out, withheld) -> set:
+    """Group failures that share an environment signature across >= ENV_MIN_COMMANDS
+    different commands into one environment finding each. Returns the ids of the
+    failures those findings explain, so they are not also proposed per command."""
+    by_sig = defaultdict(list)
+    for e in failures:
+        sig = environment_signature(e.error)
+        if sig:
+            by_sig[sig].append(e)
+    explained = set()
+    for sig, fails in sorted(by_sig.items(), key=lambda kv: -len(kv[1])):
+        # the part that failed where it can be told, else the command's head
+        commands = Counter((keys[id(e)][0], keys[id(e)][1] or e.shape) for e in fails)
+        if len(commands) < ENV_MIN_COMMANDS or len(fails) < min_fails:
+            continue
+        sessions = {e.session for e in fails}
+        hosts = Counter(e.source for e in fails)
+        c = Candidate(
+            kind="environment", key=f"env|{sig[:80]}",
+            title=f"environment: `{sig[:70]}` breaks {len(commands)} different commands",
+            claim=(f"{len(fails)} failures across {len(sessions)} sessions share one error in {len(commands)} "
+                   "different commands. The cause is the machine or toolchain, not any one command, so a rule "
+                   "on each command would not fix it."),
+            tier=tiers.RECURRING, sources=sorted(hosts),
+            numbers={"fails": len(fails), "sessions": len(sessions), "hosts": dict(hosts),
+                     "commands": [[f"{s}: {sh}", n] for (s, sh), n in commands.most_common(8)],
+                     "error_signature": sig,
+                     "first": min(e.ts for e in fails).isoformat(), "last": max(e.ts for e in fails).isoformat()},
+            ladder=[("constraint", False, f"a rule keys on one command; this error breaks {len(commands)}"),
+                    ("environment fix", True, "fix it once where it lives: the interpreter, PATH or toolchain")],
+            correction=[_sample(e) for e in fails[:3]],
+            requires=["human-fix"],
+            caveats=["no artifact: approving it records the fix as done by hand"])
+        c.gate("breadth", len(sessions) >= min_sessions,
+               f"{len(sessions)} session(s); one session retrying is one incident",
+               suppressed="breadth" in suppress)
+        (out if c.admitted else withheld).append(c)
+        explained.update(id(e) for e in fails)
+    return explained
 
 
 def replay_ruleset(rules: list, corpus) -> list:

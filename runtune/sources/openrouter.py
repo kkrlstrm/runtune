@@ -65,15 +65,48 @@ def load(dsn: str, days: int = 120, routes_path: str | None = None) -> Corpus:
 
 
 def load_policy(path: str) -> dict:
+    """The allowlist, plus every way it fails its schema (`errors`). RunTune analyses
+    what parses either way; the routes deriver reports the errors as a finding."""
     with open(os.path.expanduser(path)) as f:
         data = json.load(f)
     modes = data.get("modes", data)
+    errors, validator = policy_errors(data)
     return {
         "modes": {k: v for k, v in modes.items() if isinstance(v, dict) and v.get("model")},
         "retired": data.get("retired", {}),
         "staleness_warn_days": int(data.get("staleness_warn_days", 120)),
         "path": path,
+        "errors": errors,
+        "validator": validator,
     }
+
+
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def policy_errors(data) -> tuple[list[str], str]:
+    """(errors, which validator found them). model-eval-gate owns the routes.json schema;
+    when it is installed its validator is used, so RunTune, the TypeScript CLI and the
+    Python router reach one verdict on one file. Without it, only the fields RunTune
+    itself reads are checked, and the report says so."""
+    try:
+        from meg.routes_schema import validate_routes
+        return validate_routes(data), "model-eval-gate"
+    except ImportError:
+        pass
+    if not isinstance(data, dict) or not isinstance(data.get("modes"), dict):
+        return ["not a routes.json document: no `modes` object"], "runtune"
+    errs = []
+    for name, m in data["modes"].items():
+        if not isinstance(m, dict) or not m.get("model"):
+            errs.append(f"modes.{name}.model: required non-empty string")
+        elif not _ISO_DATE.match(str(m.get("verified_date", ""))):
+            errs.append(f"modes.{name}.verified_date: must be an ISO date (YYYY-MM-DD)")
+    for name, r in (data.get("retired") or {}).items():
+        rd = r.get("retired_date") if isinstance(r, dict) else None
+        if rd is not None and not _ISO_DATE.match(str(rd)):
+            errs.append(f"retired.{name}.retired_date: must be an ISO date (YYYY-MM-DD)")
+    return errs, "runtune (fields it reads; install model-eval-gate for the full schema)"
 
 
 def from_rows(call_rows, activity_rows=()) -> Corpus:
@@ -90,7 +123,7 @@ def from_rows(call_rows, activity_rows=()) -> Corpus:
             error="" if r.get("ok") else "request not ok",
             model=r.get("model"), tokens_in=int(r.get("tok_in") or 0),
             tokens_out=int(r.get("tok_out") or 0), usd=float(r.get("usd") or 0),
-            duration_ms=r.get("duration_ms"),
+            duration_ms=r.get("duration_ms"), billing="api",
         ))
     corpus.spend = [dict(r) for r in activity_rows]
     cov.notes.append("`ok` is transport success, not answer quality")

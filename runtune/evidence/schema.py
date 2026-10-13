@@ -43,6 +43,7 @@ class Event:
     duration_ms: int | None = None
     inline_target: str | None = None
     chars: int = 0              # length of the original command, before truncation
+    billing: str | None = None  # "api" (metered per token) | "subscription" | None (unknown)
 
     @property
     def week(self) -> str:
@@ -76,8 +77,11 @@ class Coverage:
     unsettled: int = 0          # pending / orphaned / running — excluded from rates
     gaps: list = field(default_factory=list)   # [(start_date, end_date, days)]
     notes: list = field(default_factory=list)
+    summary: str = ""           # a source that is not a stream of attempts says what it holds
 
     def line(self) -> str:
+        if self.summary:
+            return f"{self.source}: {self.summary}"
         if not self.first:
             return f"{self.source}: no data"
         s = (f"{self.source}: {self.settled:,} settled attempts "
@@ -112,6 +116,7 @@ class Corpus:
     invocations: list = field(default_factory=list)
     coverage: dict = field(default_factory=dict)
     route_policy: dict | None = None        # parsed allowlist (routes.json shape)
+    regression: dict | None = None          # latest regression run (sources/regression.py)
     spend: list = field(default_factory=list)  # OpenRouter daily activity rows
     # source -> the only tools that recorder captures (absent = it sees everything)
     capture_allowlist: dict = field(default_factory=dict)
@@ -122,6 +127,8 @@ class Corpus:
         self.coverage.update(other.coverage)
         if other.route_policy is not None:
             self.route_policy = other.route_policy
+        if other.regression is not None:
+            self.regression = other.regression
         self.spend.extend(other.spend)
         self.capture_allowlist.update(other.capture_allowlist)
         return self

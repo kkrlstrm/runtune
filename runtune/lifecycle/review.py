@@ -121,6 +121,12 @@ def _judge(art, corpus, at, days):
                                                  "completed_rate": round(done / len(n), 3) if n else None}
         if t == "route":
             key = case["key"].split("|")
+            # A route change rests on an eval of its mode. A regression run after it that
+            # shows the model drifting means that eval no longer holds.
+            r = ((corpus.regression or {}).get("modes") or {}).get(key[1]) if len(key) > 1 else None
+            if r and r["model_drift"] and r["ran_at"] >= at:
+                return "revalidate", {"why": f"regression on {r['ran_at']:%Y-%m-%d} shows `{key[1]}` drifting",
+                                      "signals": [s["type"] for s in r["model_drift"]]}
             if key[0] in ("drift", "unapproved") and len(key) == 3:
                 evs = [e for e in corpus.events if e.kind == "model" and e.surface == key[1]
                        and e.model == key[2] and e.ts >= at]

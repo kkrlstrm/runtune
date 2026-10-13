@@ -15,9 +15,35 @@ Every session is opened READ ONLY. RunTune reads telemetry; it never writes to i
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 _LIBPQ = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGSERVICE", "PGOPTIONS")
+
+_NO_TABLE = re.compile(r'relation "([^"]+)" does not exist')
+_NO_COLUMN = re.compile(r'column "?([\w.]+)"? does not exist')
+
+
+def missing(exc: BaseException) -> tuple[str, str] | None:
+    """("table", name) or ("column", name) when `exc` says the warehouse lacks it, else None.
+
+    Matched on the message rather than psycopg's exception classes, so a source can be
+    tested without psycopg installed."""
+    msg = str(exc)
+    m = _NO_TABLE.search(msg)
+    if m:
+        return ("table", m.group(1))
+    m = _NO_COLUMN.search(msg)
+    if m:
+        return ("column", m.group(1))
+    return None
+
+
+def columns(dsn: str, table: str) -> set[str]:
+    """The columns of `table` as this role's search_path resolves it; empty if there is no such table."""
+    rows = query(dsn, "SELECT attname FROM pg_attribute WHERE attrelid = to_regclass(%s) "
+                      "AND attnum > 0 AND NOT attisdropped", [table])
+    return {r["attname"] for r in rows}
 
 
 def resolve_dsn(dsn_or_env: str | None) -> str:

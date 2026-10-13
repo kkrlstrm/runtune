@@ -44,7 +44,23 @@ WHERE a.agent_type IS NOT NULL AND a.started_at >= now() - make_interval(days =>
 
 def load(dsn: str, days: int = 120) -> Corpus:
     rows = pg.query(dsn, _EVENTS_SQL, [days])
-    return from_rows(rows, pg.query(dsn, _INVOCATIONS_SQL, [days]))
+    # agent_invocations is the optional half: an older cc-logger has no token_source, and
+    # some installs have no invocation table at all. Either way the tool-call evidence
+    # stands; what is missing is said in the coverage notes.
+    notes, inv_rows = [], []
+    cols = pg.columns(dsn, "agent_invocations")
+    if not cols:
+        notes.append("no agent_invocations table: no sub-agent census or token figures")
+    else:
+        sql = _INVOCATIONS_SQL
+        if "token_source" not in cols:
+            sql = sql.replace("a.token_source", "NULL::text AS token_source")
+            notes.append("agent_invocations has no token_source column (an older cc-logger): "
+                         "sub-agent token figures are not used")
+        inv_rows = pg.query(dsn, sql, [days])
+    corpus = from_rows(rows, inv_rows)
+    corpus.coverage["claude"].notes.extend(notes)
+    return corpus
 
 
 def from_rows(rows, inv_rows=()) -> Corpus:

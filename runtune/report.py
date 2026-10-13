@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 KIND_HEAD = {
+    "environment": "Environment — one cause breaking several commands → fix the machine, not the agent",
     "constraint": "Constraints — failure / drift → \"don't do this again\"",
     "capability": "Capabilities — success / reuse → \"do this again\"",
     "subagent": "Skilled subagents — isolated, repeated work → a purpose-built type",

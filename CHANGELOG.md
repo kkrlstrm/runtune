@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+**model-eval-gate is RunTune's route engine.** Four connections, each with a contract test
+on both sides:
+
+- **A bake-off writes the eval a route change carries.** model-eval-gate's
+  `eval/bakeoff.ts` scores a candidate against the incumbent on the same tasks and writes a
+  `runtune.route-eval/1` result; its verdict rules are in `eval/route_eval.ts`. A golden
+  result in that repo is checked with RunTune's own validator, so a renamed field fails a
+  test rather than an `apply --eval`.
+- **One routes.json schema.** model-eval-gate's TypeScript and Python validators reach the
+  same verdict on a shared case file, and RunTune validates with the Python one when it is
+  installed (otherwise it checks the fields it reads). A file that fails is a finding that
+  needs a person. The schema now has `status: "trial"` (a trial mode may omit
+  `evidence_ref` and `do_not_use_when`), requires `evidence_ref` on cleared modes, and treats
+  `_`-prefixed keys as annotations.
+- **Regression drift is a finding.** `--regression` (or a `regression-results.json` next to
+  `--routes`) is read in both the current and the older format. Model drift on the routed
+  model is a route finding; a run that never reached a provider, or that broke on parsing,
+  is withheld with its reason. A clean run after a stale clearance is named on the stale
+  finding as the re-check that re-clears it (`eval/regression.ts --route-evals <dir>` writes
+  the result to apply). Review marks an applied route change `revalidate` when its mode
+  drifts afterwards.
+- **Delegation: the agents' own work, through model-eval-gate.** A new deriver runs
+  model-eval-gate's workload classes over RunTune's evidence. API-billed repeated tasks it
+  would clear except for their stakes become findings that ask that question;
+  subscription-billed tasks are one line saying moving them saves $0. Events carry
+  `billing` (router calls are `api`; the agents' own turns follow `$RUNTUNE_HOST_BILLING`,
+  default `subscription`). model-eval-gate reads RunTune's evidence
+  (`meg observe ingest --from-runtune`) and keeps the same redacted text.
+
+Four fixes from the first run over a team's telemetry (four engineers, 30 days). Each is
+tested over its class in `tests/test_pilot_defects.py`.
+
+- **A missing table or column is a coverage note, for every source.** An older cc-logger has
+  no `agent_invocations.token_source`, and RunTune stopped with a traceback. Every warehouse
+  source now turns a missing table or column into a coverage note and a warning, and the other
+  sources still load. Claude keeps its tool-call evidence when `token_source` (or the whole
+  invocation table) is missing and says that sub-agent token figures are not used. A skipped
+  OpenRouter source still applies `--routes`.
+- **A shell failure is blamed on the part that failed.** Failures were keyed on a command's
+  first part, so `report.py … | head; echo ===; …` filed the report's normal output as its
+  error and proposed a rule against a command that had worked. The key is now the part whose
+  exit status the call reported (the last of a `;` list, the end of a pipeline). An `&&` chain,
+  a loop or a truncated recording cannot be attributed; those failures are reported as
+  withheld, not counted against any command.
+- **One cause breaking several commands is an `environment` finding, not a rule per command.**
+  A broken toolchain (`xcrun: unable to load libxcrun`) had become four separate rules, none of
+  which could fix it. An error shared by three or more different commands is now one finding
+  with no artifact; approving it records the fix as done by hand, and `stage` refuses it.
+  Tracebacks, usage lines, warnings, harness timeouts and normal output are not causes.
+- **Routes are judged against the policy in force when each call ran.** Calls made while a
+  since-retired mode was in force read as unapproved; they are now history. The `routes`
+  table used its own status logic and called pre-clearance and benchmark traffic drift; it now
+  shares one classifier with `derive`, so the two cannot disagree.
+
 - **`runtune verify`: run a proposal before anyone applies it.** A staged capability or
   sub-agent runs headless on tasks you write, against control (the repository
   as it is) and treatment (the draft overlaid), in a contained copy of the repository:
