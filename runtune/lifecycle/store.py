@@ -44,6 +44,10 @@ DEFAULT_AUTHORITY = {
     "auto_apply": [],
     "require_verify": [],
     "route_eval": {"min_cases": 20, "max_age_days": 30},
+    "guard": {"_readme": "Checked before anything is written: secrets (env vars named like credentials "
+                         "plus secret_env), token shapes, invisible Unicode, and case_values: "
+                         "[{path, keys?}] lists of names that must never appear in an artifact.",
+              "case_values": [], "ignore": [], "min_len": 4, "secret_env": []},
 }
 
 

@@ -22,6 +22,10 @@ WITHOUT the learner being able to rewrite its own safety boundaries.
      refused against the next.
   6. PROTECTED PATHS. Host settings, hook wiring and VCS internals are never
      written, whatever the approver says.
+  7. THE WRITE GUARD. What an artifact would write is checked at stage and again at
+     apply (`runtune/guard.py`): no secret in any encoding, no token shape, no
+     invisible Unicode, no value from the host's case-data list. A hit refuses; the
+     artifact is never redacted into something nobody reviewed.
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ import re
 import shutil
 from datetime import date, datetime, timedelta, timezone
 
+from .. import guard as write_guard
 from .. import verify
 from ..verify import route_eval
 from ..evidence import tiers
@@ -64,6 +69,7 @@ def stage(ws: Workspace, cid: str, target_root: str = ".", revises: str | None =
         raise Refused(f"{cid} is already staged/active; use --revises to declare a new version")
 
     target = _target_path(ws, cand, target_root)
+    _guard(ws, cand, target, target_root)
     evidence = ws.put_evidence(_evidence_md(cand))
     cases = _cases(cand)
     lineage = []
@@ -79,7 +85,8 @@ def stage(ws: Workspace, cid: str, target_root: str = ".", revises: str | None =
 
     art = {"id": cid, "kind": cand["kind"], "title": cand["title"], "state": "staged",
            "direction": cand["direction"], "tier": cand["tier"], "candidate": cand,
-           "target": target, "base_digest": file_digest(target), "evidence": evidence,
+           "target": target, "target_root": os.path.abspath(target_root),
+           "base_digest": file_digest(target), "evidence": evidence,
            "cases": cases, "revises": revises, "lineage": lineage,
            "staged_at": _now(), "staged_reason": reason,
            # Epoch stamps (AgentJail/Cedar): what this was validated UNDER. A change to
@@ -115,6 +122,8 @@ def apply(ws: Workspace, aid: str, approver: str, action: str | None = None,
         raise Refused("this proposal WIDENS what agents may do; applying it needs --reason")
     kind = art["kind"]
     cand = art["candidate"]
+    # Again at apply, with the secrets and case data of now: a value added since staging counts.
+    _guard(ws, cand, art["target"], art.get("target_root", "."))
     eval_digest = None
     if kind in ("capability", "subagent") and (eval_ref or kind in auth.get("require_verify", [])):
         # A verify result is evidence about ONE draft against ONE version of the target. An
@@ -185,6 +194,16 @@ def retire(ws: Workspace, aid: str, approver: str, reason: str) -> dict:
 
 
 # -------------------------------------------------------------------- helpers
+def _guard(ws, cand, target, target_root) -> None:
+    try:
+        g = write_guard.Guard(ws.authority().get("guard"), target_root)
+    except FileNotFoundError as exc:
+        raise Refused(f"write guard is not configured correctly: {exc}") from None
+    refusals = g.check(write_guard.artifact_texts(cand, target))
+    if refusals:
+        raise Refused("write guard: " + "; ".join(str(r) for r in refusals))
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 

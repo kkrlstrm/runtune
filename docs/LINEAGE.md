@@ -66,6 +66,24 @@ Ideas were reimplemented; no code was copied.
 - AutoRefine admits artifacts automatically once its gates pass. RunTune never does.
 - AutoRefine v2 has no pruning (v1's score-and-prune was dropped). RunTune's `review` retires.
 
+## AgentRun / pi-agent-learn (a learning agent's guard, promotion and receipts). Parcha Labs, Apache-2.0.
+
+Ideas were reimplemented; no code was copied. `@parcha/pi-agent-learn` is an agent that
+learns in its own git repository: the agent notes candidates with a `learn` tool, a curator
+merges them to `main`, and saved workflows are promoted on receipts.
+
+| taken | where |
+|---|---|
+| A guard every writer runs before anything reaches git: secret values in their encoded forms, secret shapes, invisible Unicode, case data; it refuses, never redacts, and no refusal repeats the value | `runtune/guard.py`; called from `promoter.stage`/`apply` and `gitops.publish` |
+| A joiner between letters of a script that needs it is text | `guard._joiner_is_text` |
+
+**Rejected:**
+
+- The `learn` tool: the agent writes its own candidates during the run. RunTune's evidence
+  is built from recorded rows, never from what a model says about itself.
+- Automatic curation by a judge model and automatic promotion: RunTune requires a named
+  approver for every apply.
+
 ## Knowledge-hub prior art (read, not vendored)
 
 | idea | source | where |
