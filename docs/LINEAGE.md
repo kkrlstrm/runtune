@@ -78,6 +78,15 @@ merges them to `main`, and saved workflows are promoted on receipts.
 | A joiner between letters of a script that needs it is text | `guard._joiner_is_text` |
 | Receipts for every step of a run, and an idempotent propose step whose answer can be "already": a re-run after a crash heals instead of duplicating | `lifecycle/receipts.py`; `cli._resume`; `gitops.publish` reports a branch `origin` already holds |
 
+| A saved workflow is a trial until its last 3 uses, in 3 distinct runs, finished clean; 2 bad uses in a row demote it and restore the revision it replaced; the run that wrote it is no evidence for it | `lifecycle/standing.py`; `promoter.demote`; a revision marks its parent `superseded` |
+
+**Changed:**
+
+- pi-agent-learn's clean use is a workflow that completed without escalating, which a wrong
+  answer can do. RunTune's comes from recorded rows: the session's last call through the
+  skill's CLI succeeded, or the sub-agent's invocation completed.
+- pi-agent-learn demotes automatically. RunTune proposes the demotion in the digest.
+
 **Rejected:**
 
 - The `learn` tool: the agent writes its own candidates during the run. RunTune's evidence

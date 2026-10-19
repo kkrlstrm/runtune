@@ -142,11 +142,25 @@ def _meta(c) -> str:
     return " · ".join(b for b in bits if b)
 
 
+DEMOTE = "demote:"
+
+
 def compose(ws, run: dict, review_rows: list, limit: int = MAX_ITEMS, target_root: str | None = None) -> dict:
     items = [{"n": i, "id": c["id"], "kind": c["kind"], "direction": c["direction"],
               "title": c["title"], "meta": _meta(c)}
              for i, c in enumerate(select(ws, run, limit, target_root), 1)]
-    worse = [r for r in review_rows if r["verdict"] in ("review", "retire", "probe", "revalidate")]
+    # A demotion is a proposal like any other: approving it retires the artifact and restores
+    # the revision it replaced (lifecycle/standing.py). It is offered first, ahead of new work.
+    snoozed = _snoozed(ws)
+    demotions = [r for r in review_rows if r["verdict"] == "demote" and DEMOTE + r["id"] not in snoozed]
+    if demotions:
+        items = [{"n": 0, "id": DEMOTE + r["id"], "kind": "demotion", "direction": "tighten",
+                  "title": f"Demote: {r['title']}" + (" (restores the version it replaced)"
+                                                       if (r.get("detail") or {}).get("restores") else ""),
+                  "meta": (r.get("detail") or {}).get("why", "")} for r in demotions] + items
+        for i, it in enumerate(items, 1):
+            it["n"] = i
+    worse = [r for r in review_rows if r["verdict"] in ("review", "retire", "probe", "revalidate", "demote")]
     bars = []
     for r in review_rows:
         net = (r.get("detail") or {}).get("net_change")
@@ -232,6 +246,19 @@ def act(ws, state: dict, reply: str, approver: str, target_root: str) -> dict:
             declined.append(it["n"])
             ledger.append(ws.ledger_path, {"action": "decline", "id": it["id"], "digest": state["digest_id"],
                                            "by": approver})
+            continue
+        if it["id"].startswith(DEMOTE):
+            if rc.item(it["n"]).get("applied"):
+                already.append(it["n"])
+                continue
+            try:
+                rc.mark(it["n"], "approved", it["id"], by=approver)
+                promoter.demote(ws, it["id"][len(DEMOTE):], approver,
+                                reason=f"approved in digest {state['digest_id']}")
+                rc.mark(it["n"], "applied", it["id"])
+                applied.append(it["n"])
+            except promoter.Refused as exc:
+                refused.append((it["n"], str(exc)))
             continue
         if it["direction"] == "widen":
             refused.append((it["n"], "widens a boundary — apply from a terminal with --reason (and --eval)"))

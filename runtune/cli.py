@@ -604,6 +604,12 @@ def cmd_demo(a):
     return 0
 
 
+def cmd_demote(a):
+    res = promoter.demote(Workspace(a.workspace), a.id, a.approve, a.reason)
+    print(json.dumps(res))
+    return 0
+
+
 def cmd_guard(a):
     """Check files (or stdin) the way RunTune checks what it writes. Exit 4 on a refusal."""
     from . import guard as write_guard
@@ -738,6 +744,11 @@ def main(argv=None) -> int:
     p.add_argument("extra", nargs="*", help="extra args for the weekly notify (after --)")
     sub.add_parser("demo", help="run the whole loop on a synthetic trace in a temp dir")
     p = sub.add_parser("ledger")
+    p.add_argument("--workspace", default=".runtune")
+    p = sub.add_parser("demote", help="retire an artifact whose standing went bad and restore the one it revised")
+    p.add_argument("id")
+    p.add_argument("--approve", required=True)
+    p.add_argument("--reason", required=True)
     p.add_argument("--workspace", default=".runtune")
     p = sub.add_parser("guard", help="check files (or stdin) with the write guard; exit 4 on a refusal")
     p.add_argument("files", nargs="*")

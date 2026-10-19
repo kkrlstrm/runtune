@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+**Standing: a skill or sub-agent is on trial until distinct sessions show it working.**
+Review asks whether a rate moved against a control; standing asks, one session at a time,
+whether the artifact worked when it was used. An applied capability or RunTune-written
+sub-agent starts as `trial`. A use is a session after the change went live that exercised it
+(the CLI the skill points to ran; the agent type was invoked), counted once by how its last use
+ended. Three distinct clean sessions promote it to `proven` (ledger only). When the last two
+sessions that used it ended badly, review proposes a **demotion**, which the digest offers
+first: approving it retires the artifact and restores the revision it replaced, which is kept
+as `superseded` when a revision is applied. Declining snoozes it. `runtune demote <id>` does
+the same from a terminal. Thresholds: `standing` in authority.json. Constraints and routes
+have no standing; a grant narrowing has none either. Adapted from @parcha/pi-agent-learn's
+workflow promotion, with outcomes from recorded rows and a demotion that waits for a person.
+
 **An approval interrupted between apply and publish is resumed, not lost.** `inbox --git`
 applied every approved item and only then pushed; a failed push or a stopped machine left
 artifacts `active` that no branch held, a server that re-syncs its clone each run then lost

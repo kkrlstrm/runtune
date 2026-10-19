@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 
 from .. import measure
 from ..derive import constraints as dc
+from . import ledger, standing
 
 
 def review(ws, corpus, days: int = 28) -> list[dict]:
@@ -58,6 +59,18 @@ def review(ws, corpus, days: int = 28) -> list[dict]:
         if art.get("policy_digest") and art["policy_digest"] != ws.policy_digest() and verdict in ("keep", "pending"):
             verdict = "revalidate"
             detail["policy_change"] = "authority.json changed since this was admitted"
+        if "standing" in art:
+            st = standing.settle(art, corpus, (ws.authority().get("standing") or {}))
+            detail = {**(detail or {}), "standing": st}
+            if st["decision"] == "promote":
+                art["standing"] = "proven"
+                art["proven_at"] = datetime.now(timezone.utc).isoformat()
+                ws.put(art)
+                ledger.append(ws.ledger_path, {"action": "promote", "id": art["id"], "why": st["why"]})
+            elif st["decision"] == "demote":
+                verdict = "demote"
+                detail["why"] = st["why"]
+                detail["restores"] = art.get("revises")
         out.append({"id": art["id"], "kind": art["kind"], "title": art["title"],
                     "applied_at": art["applied_at"], "verdict": verdict, "detail": detail})
     return out
