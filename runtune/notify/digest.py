@@ -33,7 +33,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from ..derive.candidate import NO_ARTIFACT_KINDS
-from ..lifecycle import ledger, promoter
+from ..lifecycle import ledger, promoter, receipts
 
 SNOOZE_DAYS = 28
 MAX_ITEMS = 8
@@ -225,7 +225,8 @@ def act(ws, state: dict, reply: str, approver: str, target_root: str) -> dict:
     if parsed["status"] != "ok":
         return {"status": "ambiguous", "message": f"I didn't act on that ({parsed['why']}). Reply with item "
                 f"numbers like “1,3”, or “all”, “all except 2”, “none”."}
-    applied, refused, declined = [], [], []
+    applied, refused, declined, already = [], [], [], []
+    rc = receipts.Receipts(ws, state["digest_id"])
     for it in items:
         if it["n"] not in parsed["approve"]:
             declined.append(it["n"])
@@ -242,10 +243,22 @@ def act(ws, state: dict, reply: str, approver: str, target_root: str) -> dict:
                                            "digest": state["digest_id"], "note": f"{what}, tracked by hand"})
             refused.append((it["n"], f"no artifact to apply — recorded as acknowledged; the fix is {what}"))
             continue
+        prior = rc.item(it["n"])
+        art = ws.get(it["id"])
+        if prior.get("approved") and not prior.get("applied") and art and art.get("state") == "active":
+            # Interrupted between apply and its receipt: the apply happened.
+            rc.mark(it["n"], "applied", it["id"])
+            prior = rc.item(it["n"])
+        if prior.get("applied"):
+            # Re-reading a reply after an interrupted run: the item was carried out already.
+            already.append(it["n"])
+            continue
+        rc.mark(it["n"], "approved", it["id"], by=approver)
         try:
             if not ws.get(it["id"]):
                 promoter.stage(ws, it["id"], target_root)
             promoter.apply(ws, it["id"], approver=approver, reason=f"approved in digest {state['digest_id']}")
+            rc.mark(it["n"], "applied", it["id"])
             applied.append(it["n"])
         except promoter.Refused as exc:
             refused.append((it["n"], str(exc)))
@@ -256,5 +269,7 @@ def act(ws, state: dict, reply: str, approver: str, target_root: str) -> dict:
         msg.append(f"Not applied {n}: {why}")
     if declined:
         msg.append(f"Declined (snoozed {SNOOZE_DAYS} days): " + ", ".join(map(str, declined)))
-    return {"status": "done", "applied": applied, "refused": refused, "declined": declined,
+    if already:
+        msg.append("Already applied in an earlier run: " + ", ".join(map(str, already)))
+    return {"status": "done", "applied": applied, "refused": refused, "declined": declined, "already": already,
             "message": "\n".join(msg) or "Nothing to do."}

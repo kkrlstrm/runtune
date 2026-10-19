@@ -76,6 +76,7 @@ merges them to `main`, and saved workflows are promoted on receipts.
 |---|---|
 | A guard every writer runs before anything reaches git: secret values in their encoded forms, secret shapes, invisible Unicode, case data; it refuses, never redacts, and no refusal repeats the value | `runtune/guard.py`; called from `promoter.stage`/`apply` and `gitops.publish` |
 | A joiner between letters of a script that needs it is text | `guard._joiner_is_text` |
+| Receipts for every step of a run, and an idempotent propose step whose answer can be "already": a re-run after a crash heals instead of duplicating | `lifecycle/receipts.py`; `cli._resume`; `gitops.publish` reports a branch `origin` already holds |
 
 **Rejected:**
 

@@ -357,25 +357,71 @@ def _approver(a):
 
 
 def _after_done(a, st, res):
-    if getattr(a, "git", False) and res.get("applied"):
-        from . import gitops
-        url = gitops.publish(a.target_root, st["digest_id"], res["message"],
-                             Workspace(a.workspace).authority().get("guard"))
-        print(url)
-        # On a branch, not yet live: review must not measure a change nobody merged.
-        ws = Workspace(a.workspace)
-        ids = {i["n"]: i["id"] for i in st["items"]}
-        for n in res["applied"]:
-            art = ws.get(ids[n])
-            if art:
-                art["pending_merge"] = url
+    if not (getattr(a, "git", False) and res.get("applied")):
+        return
+    ids = {i["n"]: i["id"] for i in st["items"]}
+    _publish(a, st["digest_id"], [(n, ids[n]) for n in res["applied"]], res["message"])
+
+
+def _publish(a, digest_id, items, message):
+    """Publish applied items on a branch, recording each step so an interruption resumes."""
+    from . import gitops
+    from .lifecycle import receipts
+    ws = Workspace(a.workspace)
+    rc = receipts.Receipts(ws, digest_id)
+    # Until the branch exists, the change is nowhere a reviewer can see: review must not
+    # measure it, and a reset target must be able to have it re-applied.
+    for _, aid in items:
+        art = ws.get(aid)
+        if art:
+            art["pending_publish"] = digest_id
+            ws.put(art)
+    auth = ws.authority()
+    url = gitops.publish(a.target_root, digest_id, message, auth.get("guard"), auth.get("targets"))
+    print(url)
+    ref = gitops.remote_ref(a.target_root, gitops.branch_for(digest_id))
+    for n, aid in items:
+        rc.mark(n, "published", aid, branch=gitops.branch_for(digest_id), ref=ref, url=url)
+        art = ws.get(aid)
+        if art:
+            art.pop("pending_publish", None)
+            art["pending_merge"] = url
+            ws.put(art)
+
+
+def _resume(a) -> list[str]:
+    """Carry every applied-but-unpublished approval the rest of the way (see lifecycle/receipts)."""
+    from .lifecycle import receipts, review
+    ws = Workspace(a.workspace)
+    done = []
+    for did in receipts.all_digests(ws):
+        rc = receipts.Receipts(ws, did)
+        todo = rc.unpublished()
+        if not todo:
+            continue
+        for n, aid in todo:
+            art = ws.get(aid)
+            if art and art["state"] == "active" and not review._live(art):
+                # The target was reset under it (a server re-syncs its clone each run): put the
+                # artifact back to staged and apply it again, through every check apply makes.
+                art["state"] = "staged"
                 ws.put(art)
+                ledger.append(ws.ledger_path, {"action": "resume", "id": aid, "digest": did,
+                                               "why": "applied, never published; target no longer has it"})
+                promoter.apply(ws, aid, approver=art.get("approver") or _approver(a),
+                               reason=f"re-applied after an interrupted publish of digest {did}")
+        _publish(a, did, todo, f"Re-published after an interrupted run: items {', '.join(str(n) for n, _ in todo)}")
+        done.append(did)
+    return done
 
 
 def cmd_inbox(a):
     from . import notify
     from .notify import digest
     ws = Workspace(a.workspace)
+    if getattr(a, "git", False):
+        for did in _resume(a):
+            print(f"{did}: resumed an interrupted publish")
     pending = digest.awaiting(ws)
     if not pending:
         print("no digest awaiting a reply")
@@ -388,6 +434,9 @@ def cmd_inbox(a):
             res = notify.handle(ws, st, rec, text, _approver(a), a.target_root)
             print(f"{st['digest_id']} via {rec['type']}: {res['status']} — {res['message']}")
             if res["status"] == "done":
+                # Saved before publishing: the reply is answered whatever happens to the push,
+                # and the receipts carry what is left (resumed on the next run).
+                digest.save(ws, st)
                 _after_done(a, st, res)
                 break
         digest.save(ws, st)
@@ -409,9 +458,9 @@ def cmd_reply(a):
         rec = {"type": "local", "entry": {"type": "local", "desktop": False}, "ok": True}
         st.setdefault("deliveries", []).append(rec)
     res = notify.handle(ws, st, rec, " ".join(a.text), _approver(a), a.target_root)
+    digest.save(ws, st)
     if res["status"] == "done":
         _after_done(a, st, res)
-    digest.save(ws, st)
     return 0 if res["status"] == "done" else 2
 
 

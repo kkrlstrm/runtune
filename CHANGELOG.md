@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**An approval interrupted between apply and publish is resumed, not lost.** `inbox --git`
+applied every approved item and only then pushed; a failed push or a stopped machine left
+artifacts `active` that no branch held, a server that re-syncs its clone each run then lost
+them, and the reply was re-read with every item refused as "already active". Now:
+
+- each approved item gets receipts (`.runtune/receipts/<digest>.json`): approved, applied,
+  published (branch and commit), each written atomically after the step happened;
+- the digest is saved as answered before the publish starts;
+- an artifact applied but not yet published is marked `pending_publish`, and review reports
+  it as pending instead of measuring a change nobody can see;
+- the next `inbox --git` resumes it first: when the target was reset under it, the artifact
+  goes back to staged and is applied again through every apply check (stale target, write
+  guard), then published;
+- a reply re-read after an interruption reports "already applied"; an apply interrupted
+  before its receipt is recognised from the artifact's state;
+- `publish` is idempotent: a digest branch `origin` already holds is reported, not pushed again.
+
 **A write guard on everything RunTune writes.** Redaction already scrubbed what RunTune
 stores; nothing checked what it writes. `stage` and `apply` now check the artifact (skill,
 agent file, ruleset rule, grant, route, title and claim), and `inbox --git` checks the

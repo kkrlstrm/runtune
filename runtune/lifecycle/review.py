@@ -31,6 +31,12 @@ def review(ws, corpus, days: int = 28) -> list[dict]:
     eps = measure.epochs(corpus)
     out = []
     for art in ws.artifacts("active"):
+        if art.get("pending_publish"):
+            out.append({"id": art["id"], "kind": art["kind"], "title": art["title"],
+                        "applied_at": art.get("applied_at"), "verdict": "pending",
+                        "detail": {"why": "approved, never published (interrupted); the next inbox --git resumes it",
+                                   "digest": art["pending_publish"]}})
+            continue
         if art.get("pending_merge"):
             if not _live(art):
                 out.append({"id": art["id"], "kind": art["kind"], "title": art["title"],

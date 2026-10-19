@@ -37,16 +37,48 @@ def staged_texts(root: str) -> dict[str, str]:
     return out
 
 
-def publish(root: str, digest_id: str, body: str, guard_cfg: dict | None = None) -> str:
+def branch_for(digest_id: str) -> str:
+    return f"runtune/{digest_id.lower()}"
+
+
+def remote_ref(root: str, branch: str) -> str | None:
+    """The commit `origin` holds for `branch`, or None."""
+    out = _git(root, "ls-remote", "--heads", "origin", branch)
+    return out.split()[0] if out else None
+
+
+def _kind_of(root: str, targets: dict):
+    """path -> the artifact kind whose target it lies under (authority.json `targets`)."""
+    roots = [(k, os.path.realpath(os.path.join(root, t))) for k, t in targets.items() if isinstance(t, str)]
+
+    def kind(path: str):
+        real = os.path.realpath(path)
+        for k, r in roots:
+            if real == r or real.startswith(r + os.sep):
+                return k
+        return None
+    return kind
+
+
+def publish(root: str, digest_id: str, body: str, guard_cfg: dict | None = None,
+            targets: dict | None = None) -> str:
+    """Commit everything staged in `root` on runtune/<digest>, push it, open the PR.
+
+    Idempotent: a branch `origin` already holds for this digest is the earlier run's publish,
+    so it is reported, not pushed again (a re-run after an interrupted publish heals instead of
+    duplicating). A local branch left by an interrupted run is replaced."""
     from . import guard as write_guard
-    branch = f"runtune/{digest_id.lower()}"
+    branch = branch_for(digest_id)
+    pushed = remote_ref(root, branch)
+    if pushed:
+        return f"already pushed {branch} @ {pushed[:12]}"
     base = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
-    _git(root, "checkout", "-b", branch)
+    _git(root, "checkout", "-q", "-B", branch)
     _git(root, "add", "-A")
     texts = staged_texts(root)
     texts["message"] = body
     try:
-        refusals = write_guard.Guard(guard_cfg, root).check(texts)
+        refusals = write_guard.Guard(guard_cfg, root).check(texts, kind_of=_kind_of(root, targets or {}))
     except FileNotFoundError as exc:
         refusals = [write_guard.Refusal("guard_config", "authority.json", str(exc))]
     if refusals:
