@@ -104,8 +104,10 @@ the deployment boundary. [Channels and deployment →](docs/CHANNELS.md)
 |---|---|---|
 | repeated failure | **constraint** | a guard rule, capped at what its failure rate supports (nudge, deny, or block) |
 | repeated success | **capability** | a `SKILL.md` naming the commands that have worked, for code agents keep re-deriving |
-| isolated, repeated work | **sub-agent** | a purpose-built agent type, granted exactly the tools its predecessors used |
+| isolated, repeated work | **sub-agent** | a purpose-built agent type, granted exactly the tools its predecessors used, named for the task the agents were given when the recorder kept it |
 | approved vs. ran vs. billed | **route** | a routing check or a retired clearance; a cheaper model always requires an eval first |
+| one error across many commands | **environment** | nothing: a finding for a person, because the fix is on the machine (a broken interpreter, a missing binary), not in the agent's rules |
+| two sessions acting on one target | **coordination** | nothing: a finding for the team, when sessions deploy the same app or edit the same file without messaging each other, write messages a reader cannot check, or poll instead of asking for a notice |
 
 Each proposal is compiled to the narrowest artifact that works: a rule if a rule will do, a
 sub-agent only if a skill won't. Each proposal also records why the narrower options were

@@ -35,7 +35,7 @@ import time
 from datetime import datetime, timezone
 
 from . import measure, report, sources
-from .derive import capabilities, constraints, routes, subagents
+from .derive import capabilities, constraints, coordination, delegation, routes, subagents
 from .lifecycle import ledger, promoter, review
 from .lifecycle.store import Workspace
 
@@ -48,6 +48,7 @@ def _common(p):
     p.add_argument("--db", default="RUNTUNE_DB_URL", help="DSN or env var holding one (default $RUNTUNE_DB_URL)")
     p.add_argument("--days", type=int, default=120)
     p.add_argument("--routes", help="path to the model allowlist (routes.json shape)")
+    p.add_argument("--regression", help="regression-results.json (default: one next to --routes, if present)")
     p.add_argument("--jsonl", action="append", help="portable evidence file(s); repeatable")
     p.add_argument("--workspace", default=".runtune")
     p.add_argument("--cache", type=int, default=0, metavar="MIN",
@@ -59,13 +60,13 @@ def _corpus(a):
         warehouse = "://" in a.db or bool(os.environ.get(a.db))
         a.source = "" if a.jsonl else ("claude,codex,cursor,antigravity,openrouter" if warehouse else "local")
     srcs = [s for s in a.source.split(",") if s]
-    key = re.sub(r"[^a-z0-9]+", "-", f"{','.join(srcs)}-{a.days}-{a.routes}-{a.jsonl}".lower())[:120]
+    key = re.sub(r"[^a-z0-9]+", "-", f"{','.join(srcs)}-{a.days}-{a.routes}-{a.jsonl}-{getattr(a, 'regression', None)}".lower())[:120]
     path = os.path.join(a.workspace, f".corpus-{key}.pkl")
     if a.cache and os.path.exists(path) and time.time() - os.path.getmtime(path) < a.cache * 60:
         with open(path, "rb") as f:
             return pickle.load(f)
     t = time.time()
-    c = sources.load(srcs, a.db, a.days, a.routes, a.jsonl)
+    c = sources.load(srcs, a.db, a.days, a.routes, a.jsonl, getattr(a, "regression", None))
     print(f"runtune: loaded {len(c.events):,} attempts, {len(c.invocations):,} invocations "
           f"from {', '.join(c.sources()) or 'nothing'} in {time.time() - t:.1f}s", file=sys.stderr)
     if a.cache:
@@ -93,7 +94,7 @@ def cmd_derive(a):
     cands, held = [], []
     for fn in (lambda: constraints.derive(c), lambda: capabilities.derive_inline(c),
                lambda: capabilities.derive_procedures(c), lambda: subagents.derive(c, a.agents_dir),
-               lambda: routes.derive(c)):
+               lambda: routes.derive(c), lambda: delegation.derive(c), lambda: coordination.derive(c)):
         got, wh = fn()
         cands += got
         held += wh
@@ -322,7 +323,8 @@ def _run_for_digest(a, ws):
     c = _corpus(a)
     cands, held = [], []
     for fn in (lambda: constraints.derive(c), lambda: capabilities.derive_inline(c),
-               lambda: subagents.derive(c, getattr(a, "agents_dir", None)), lambda: routes.derive(c)):
+               lambda: subagents.derive(c, getattr(a, "agents_dir", None)), lambda: routes.derive(c),
+               lambda: delegation.derive(c), lambda: coordination.derive(c)):
         got, wh = fn()
         cands += got
         held += wh

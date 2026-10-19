@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 
 KIND_HEAD = {
+    "environment": "Environment — one cause breaking several commands → fix the machine, not the agent",
     "constraint": "Constraints — failure / drift → \"don't do this again\"",
     "capability": "Capabilities — success / reuse → \"do this again\"",
     "subagent": "Skilled subagents — isolated, repeated work → a purpose-built type",
     "route": "Routes — what was approved vs. what ran vs. what was billed",
+    "coordination": "Coordination — sessions acting on the same target → did they tell each other",
 }
 
 

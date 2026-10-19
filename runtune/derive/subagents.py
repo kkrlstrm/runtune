@@ -27,6 +27,12 @@ GRANT, not in the prompt — so the grant has to come from evidence.
   CONTRACT LINT (from AutoRefine): an agent whose definition never states how it
   reports failure cannot be told apart from one that succeeded with nothing.
 
+  NAMED BY TASK when the recorder says what each agent was asked to do (the Agent
+  call's description, a workflow agent's label, its workflow and phase). A fan-out is
+  one Workflow run when there is one, else one session's agents of a type. A workflow
+  whose agents run as the generic type is fixed in that workflow's script (pass an
+  agentType), so the finding names the workflow.
+
 Token figures use only per-agent-verified rows (`token_verified`). Everything else
 here is counts, which the historical token bug never touched.
 """
@@ -118,7 +124,7 @@ def derive(corpus, agents_dir: str | None = None) -> tuple[list, list]:
     fanouts = defaultdict(list)
     for i in corpus.invocations:
         if i.agent_type in GENERIC_TYPES:
-            fanouts[(i.source, i.agent_type, i.session)].append(i)
+            fanouts[(i.source, i.agent_type, i.workflow_run or i.session)].append(i)
     # Fold each fan-out into the smallest observed toolset that contains its own:
     # {Bash} and {Bash, WebFetch} fan-outs are the same worker on a lighter day.
     sized = []
@@ -147,15 +153,25 @@ def derive(corpus, agents_dir: str | None = None) -> tuple[list, list]:
         reuse = tiers.classify_reuse(len(groups), weeks)
         generic = profiles.get((src, t), {})
         fallbacks = [k for k, v in cen.items() if v < FALLBACK_BELOW]
-        name = "-".join(x.lower().replace("mcp__", "") for x in toolset)[:40] + "-worker"
+        tasks = Counter(i.task for i in agents if i.task)
+        named = sum(tasks.values())
+        workflows = Counter(i.workflow_name for i in agents if i.workflow_name)
+        top_task = tasks.most_common(1)[0][0] if tasks and tasks.most_common(1)[0][1] >= len(agents) / 2 else None
+        name = (_slug(top_task) if top_task else
+                "-".join(x.lower().replace("mcp__", "") for x in toolset)[:40]) + "-worker"
+        where = (f" in {', '.join(f'`{w}`' for w, _ in workflows.most_common(3))}" if workflows else "")
         c = Candidate(
             kind="subagent", key=f"{src}|{t}|{'+'.join(toolset)}",
-            title=f"{len(groups)} `{t}` fan-outs only ever used {{{', '.join(toolset)}}} — give them a purpose-built type",
+            title=f"{len(groups)} `{t}` fan-outs{where} only ever used {{{', '.join(toolset)}}} — "
+                  "give them a purpose-built type",
             claim=(f"{len(agents):,} {t} agents across {len(groups)} fan-outs used only "
                    f"{len(toolset)} tool(s); the generic type grants everything and lists every skill."),
             tier=reuse, direction=TIGHTEN, sources=[src],
             numbers={"fanouts": len(groups), "agents": len(agents), "weeks": weeks, "census": cen,
                      "fallback_tools": fallbacks,
+                     "tasks": dict(tasks.most_common(8)), "agents_with_task": named,
+                     "workflows": dict(workflows.most_common(5)),
+                     "task_examples": _examples(agents),
                      "completed_rate": round(sum(i.status == "completed" for i in agents) / len(agents), 3),
                      "generic_reread_per_output": generic.get("reread_per_output"),
                      "narrow_types_reread_per_output_median": narrow_ref},
@@ -165,12 +181,15 @@ def derive(corpus, agents_dir: str | None = None) -> tuple[list, list]:
                                      "context it would multiply, not shrink"),
                     ("subagent", True, "isolated, repeated, and its toolset is measured")],
             requires=["human-review"],
-            proposal={"agent_md": _agent_md(name, toolset, fallbacks, len(agents), len(groups)),
-                      "grant": list(toolset), "grant_basis": "census — every tool any agent used"},
+            proposal={"agent_md": _agent_md(name, toolset, fallbacks, len(agents), len(groups), top_task),
+                      "grant": list(toolset), "grant_basis": "census — every tool any agent used",
+                      **({"use_in": sorted(workflows), "how": f"pass agentType: '{name}' to these workflows' "
+                                                              "agent() calls"} if workflows else {})},
         )
         c.gate("breadth", reuse != tiers.LOCAL, f"{len(groups)} fan-outs over {weeks} weeks")
         c.gate("narrower-than-host", len(toolset) <= MAX_GRANT,
                f"census has {len(toolset)} tools; a grant this wide saves little")
+        _already_typed(c, corpus, workflows, agents, t)
         g_ratio = generic.get("reread_per_output")
         if g_ratio and narrow_ref and g_ratio <= narrow_ref:
             c.caveats.append(f"NO token saving expected: generic {t} already re-reads {g_ratio}:1, at or below "
@@ -180,7 +199,12 @@ def derive(corpus, agents_dir: str | None = None) -> tuple[list, list]:
             c.caveats.append(f"projection, not a measurement: generic {t} re-reads "
                              f"{generic['reread_per_output']}:1, existing narrow types {narrow_ref}:1 (medians, "
                              "verified-token rows only)")
-        c.caveats.append("fan-outs are grouped by toolset, not by task: read a sample before naming the type")
+        if named < len(agents) / 2:
+            c.caveats.append("fan-outs are grouped by toolset, not by task (the recorder did not say what most "
+                             "agents were asked to do): read a sample before naming the type")
+        elif len(tasks) > 1 and not top_task:
+            c.caveats.append(f"{len(tasks)} different tasks share this toolset: one type may serve them all, "
+                             "or each may want its own instructions")
         (out if c.admitted else withheld).append(c)
 
     # --- 2. existing narrow types: over-grant and contract lint
@@ -219,10 +243,62 @@ def derive(corpus, agents_dir: str | None = None) -> tuple[list, list]:
     return out, withheld
 
 
-def _agent_md(name, toolset, fallbacks, n_agents, n_fanouts) -> str:
+def _already_typed(c, corpus, workflows, agents, generic_type) -> None:
+    """A workflow that has since started passing a purpose-built type is not a fresh
+    proposal: what is left is the agents that still run generic after the switch (an
+    agent() call that does not pass the type). Every one switched -> nothing to do."""
+    if not workflows:
+        return
+    typed = [i for i in corpus.invocations
+             if i.workflow_name in workflows and i.agent_type not in GENERIC_TYPES and i.started]
+    if not typed:
+        return
+    since = min(i.started for i in typed)
+    kind = Counter(i.agent_type for i in typed).most_common(1)[0][0]
+    after = [i for i in agents if i.started and i.started >= since]
+    c.numbers.update({"typed_since": since.date().isoformat(), "typed_as": kind,
+                      "generic_since_typed": len(after),
+                      "generic_since_typed_tasks": dict(Counter(i.task for i in after if i.task).most_common(5))})
+    wf = ", ".join(f"`{w}`" for w in sorted(workflows))
+    if after:
+        c.title = (f"{wf} still ran {len(after):,} agents as generic `{generic_type}` after switching to "
+                   f"`{kind}` on {since:%Y-%m-%d}")
+        c.claim = (f"Since {since:%Y-%m-%d} these workflows pass `{kind}`, but {len(after):,} of their agents still "
+                   f"ran as `{generic_type}`: an agent() call that does not pass the type. Before the switch, "
+                   f"{len(agents) - len(after):,} agents ran generic; that part is already fixed.")
+        c.proposal = {"revises": kind, "use_in": sorted(workflows),
+                      "how": f"find the agent() calls in these workflows that do not pass agentType '{kind}'"}
+    c.gate("still-generic", bool(after),
+           f"{len(after):,} generic agents since `{kind}` was adopted on {since:%Y-%m-%d}" if after else
+           f"every agent since {since:%Y-%m-%d} runs as `{kind}`: already fixed")
+
+
+def _slug(text: str) -> str:
+    s = "".join(c if c.isalnum() else "-" for c in text.lower())
+    while "--" in s:
+        s = s.replace("--", "-")
+    return s.strip("-")[:40]
+
+
+def _examples(agents, k: int = 3) -> list[dict]:
+    """What a few agents were actually asked, one per distinct task, newest first."""
+    out, seen = [], set()
+    for i in sorted(agents, key=lambda i: i.started.timestamp() if i.started else 0, reverse=True):
+        if not (i.description or i.prompt) or i.task in seen:
+            continue
+        seen.add(i.task)
+        out.append({"description": i.description, "prompt": (i.prompt or "")[:200] or None})
+        if len(out) == k:
+            break
+    return out
+
+
+def _agent_md(name, toolset, fallbacks, n_agents, n_fanouts, task=None) -> str:
     tools = ", ".join(toolset)
+    desc = (f"DRAFT — does `{task}`; describe when to use it" if task else
+            "DRAFT — name this for the task these fan-outs perform, then describe when to use it")
     lines = ["---", f"name: {name}",
-             "description: DRAFT — name this for the task these fan-outs perform, then describe when to use it",
+             f"description: {desc}",
              f"tools: {tools}", "---", "",
              f"Purpose-built worker derived from {n_agents:,} generic sub-agents across {n_fanouts} fan-outs,",
              f"which between them used only: {tools}.", ""]

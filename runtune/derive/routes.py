@@ -19,7 +19,13 @@ Findings, by which side of the loop they land on:
     idle          an approved mode with no traffic in the window: a clearance
                   nothing uses is a clearance nobody re-checks
     stale         an approved mode whose verification is older than its policy's
-                  staleness window
+                  staleness window; a clean regression run on the routed model since
+                  then is named, because it is the re-check that re-clears it
+    regression    a mode whose model no longer passes its frozen spec (model-eval-gate's
+                  regression-results.json): quality, consistency or the routed model
+                  changed. A run that never reached a provider is withheld, not drift.
+    schema        routes.json fails model-eval-gate's schema, so the runtimes that
+                  validate it route nothing
 
   CAPABILITIES (widen — "do this again, cheaper")
     challenger    a model that served the same mode at >= the approved model's
@@ -49,6 +55,39 @@ def _model_eq(a: str | None, b: str | None) -> bool:
     return bool(a) and bool(b) and a.split(":")[0].lower() == b.split(":")[0].lower()
 
 
+def _on_or_before(ts, day: str | None) -> bool:
+    try:
+        return bool(day) and ts.date() <= date.fromisoformat(str(day)[:10])
+    except ValueError:
+        return False
+
+
+def call_status(e, policy: dict) -> str:
+    """How one routed call stands against the policy IN FORCE WHEN IT RAN.
+
+    bench           a benchmark/eval caller: experiment traffic, never drift
+    approved        the mode's cleared model
+    pre-clearance   another model, on or before the mode's current clearance date
+    drift           another model, after it
+    pre-retirement  a mode retired since, called on or before its retirement date
+    unapproved      a mode the policy never had, or retired before the call
+
+    A clearance or retirement with only a DATE cannot say what hour it took effect,
+    so its own day counts as before. The `routes` table and `derive` both use this,
+    so the table cannot call drift what the deriver calls history."""
+    if BENCH_CALLER.search(e.actor or "") or BENCH_CALLER.search(e.session or ""):
+        return "bench"
+    spec = (policy.get("modes") or {}).get(e.surface)
+    if spec:
+        if _model_eq(e.model, spec.get("model")):
+            return "approved"
+        return "pre-clearance" if _on_or_before(e.ts, spec.get("verified_date")) else "drift"
+    retired = (policy.get("retired") or {}).get(e.surface)
+    if isinstance(retired, dict) and _on_or_before(e.ts, retired.get("retired_date")):
+        return "pre-retirement"
+    return "unapproved"
+
+
 def pair_stats(events) -> dict:
     n = len(events)
     ok = sum(e.ok for e in events)
@@ -68,25 +107,68 @@ def derive(corpus, today: date | None = None) -> tuple[list, list]:
     calls = [e for e in corpus.events if e.kind == "model"]
     policy = corpus.route_policy or {"modes": {}, "retired": {}, "staleness_warn_days": 120}
     modes = policy["modes"]
-    # A call made before its mode's current clearance date ran under an EARLIER
-    # policy. Judging it against today's allowlist reports a re-clearance as drift.
-    # A clearance with only a DATE cannot say what hour it took effect, so its own day
-    # is a transition day: off-policy calls on it are not evidence of drift. (The dial
+    # A call made before its mode's current clearance date — or before its mode was
+    # retired — ran under an EARLIER policy. Judging it against today's allowlist
+    # reports a re-clearance as drift and a retirement as unapproved traffic. (The dial
     # modes swapped models at ~11:00 UTC on their clearance day; every "drift" call
     # the first version reported came from that morning.)
     pairs = defaultdict(list)
-    pre_clearance = Counter()
-    bench = Counter()
+    pre_clearance, pre_retirement, bench = Counter(), Counter(), Counter()
     for e in calls:
-        if BENCH_CALLER.search(e.actor or "") or BENCH_CALLER.search(e.session or ""):
+        status = call_status(e, policy)
+        if status == "bench":
             bench[(e.surface, e.model)] += 1
-            continue
-        vd = (modes.get(e.surface) or {}).get("verified_date")
-        if vd and e.ts.date() <= date.fromisoformat(vd) and not _model_eq(e.model, modes[e.surface].get("model")):
+        elif status == "pre-clearance":
             pre_clearance[(e.surface, e.model)] += 1
-            continue
-        pairs[(e.surface, e.model)].append(e)
+        elif status == "pre-retirement":
+            pre_retirement[(e.surface, e.model)] += 1
+        else:
+            pairs[(e.surface, e.model)].append(e)
     out, withheld = [], []
+
+    # ---- the allowlist itself: a file that fails its schema is refused or misread by
+    # every runtime that loads it (the TypeScript CLI and the Python router fail closed)
+    errs = policy.get("errors") or []
+    if errs:
+        s = Candidate(
+            kind="route", key="schema|routes.json",
+            title=f"routes.json fails its schema: {len(errs)} problem(s)",
+            claim="; ".join(errs[:4]) + (f"; and {len(errs) - 4} more" if len(errs) > 4 else ""),
+            tier="lint", sources=["routes"], requires=["human-review"],
+            numbers={"errors": errs, "validator": policy.get("validator"), "path": policy.get("path")},
+            ladder=[("constraint", True, "fix the file: a runtime that validates it routes nothing until it passes")])
+        s.gate("schema", True, "")
+        out.append(s)
+
+    # ---- regression: does each cleared mode still pass its frozen spec?
+    reg = (corpus.regression or {}).get("modes", {})
+    for mode, r in sorted(reg.items()):
+        routed = (modes.get(mode) or {}).get("model")
+        c = Candidate(
+            kind="route", key=f"regression|{mode}",
+            title=f"regression: `{mode}` drifted on `{r['model']}` "
+                  f"({', '.join(sorted({s['type'] for s in r['model_drift']}))})",
+            claim="; ".join(s["detail"] for s in r["model_drift"])[:400]
+                  + " — re-run its bake-off, or retire the mode",
+            tier=tiers.RECURRING, direction=TIGHTEN, sources=["regression"],
+            numbers={"ran_at": r["ran_at"].isoformat(), "model": r["model"], "routed_model": routed,
+                     "mean_score": r["mean_score"], "pass_hat_k": r["pass_hat_k"],
+                     "baseline": r["baseline"], "signals": r["signals"]},
+            requires=["human-review", "eval"],
+            ladder=[("constraint", True, "a mode whose model no longer passes its spec should not route work")])
+        if not routed:
+            c.gate("current-policy", False, f"`{mode}` is not an approved mode now; the result is history")
+        elif not _model_eq(r["model"], routed):
+            c.gate("current-policy", False, f"regression ran on `{r['model']}`, the allowlist now routes "
+                                            f"`{routed}`: the result is about a model no longer in use")
+        elif r["inconclusive"]:
+            c.gate("conclusive", False, "the run mostly never reached a provider; it says nothing about the model")
+        elif not r["model_drift"]:
+            if r["clean"]:
+                continue                                    # a clean run is evidence, used by lifecycle below
+            c.gate("model-signal", False, "only infrastructure signals (parse or grader failures): the spec "
+                                          "or the harness needs a look, not the model")
+        (out if c.admitted else withheld).append(c)
 
     # ---- constraints: drift / unapproved / unreliable
     for (mode, model), evs in sorted(pairs.items(), key=lambda kv: -len(kv[1])):
@@ -189,16 +271,26 @@ def derive(corpus, today: date | None = None) -> tuple[list, list]:
             continue
         what = " and ".join(x for x, on in (("idle in the window", idle),
                                             (f"last verified {age} days ago (warns at {stale_days})", stale)) if on)
+        # A clean regression run on the routed model, after the clearance date, is the
+        # re-check a stale clearance asks for: say so, and what re-clearing takes.
+        r = reg.get(mode)
+        rechecked = (stale and r and r["clean"] and _model_eq(r["model"], spec.get("model"))
+                     and vd and r["ran_at"].date() > date.fromisoformat(vd))
+        if rechecked:
+            what += f"; regression re-checked it clean on {r['ran_at']:%Y-%m-%d}"
         c = Candidate(
             kind="route", key=f"lifecycle|{mode}",
             title=f"approved mode `{mode}` is {what}",
             claim=("a clearance nothing uses is a clearance nobody re-checks — retire it, or re-run its eval "
                    "before routing work to it" if idle else
+                   "its spec still passes on the routed model: re-clear it with that run's route-eval result "
+                   "(model-eval-gate: eval/regression.ts --route-evals <dir>)" if rechecked else
                    "the model behind this mode has had time to change underneath its eval — re-run its regression spec"),
             tier="lifecycle", direction=TIGHTEN if idle else NEUTRAL, sources=["openrouter"],
             numbers={"approved_model": spec.get("model"), "verified_date": vd, "age_days": age,
                      "idle": idle, "stale": stale,
-                     "traffic": len(pairs.get((mode, spec.get("model")), []))},
+                     "traffic": len(pairs.get((mode, spec.get("model")), [])),
+                     "regression_clean_on": f"{r['ran_at']:%Y-%m-%d}" if rechecked else None},
             requires=["human-review"] + (["eval"] if stale and not idle else []),
             proposal={"retire_mode": mode} if idle else {"revalidate_mode": mode},
             ladder=[("constraint", True, "retiring a clearance narrows what may run")],
@@ -274,6 +366,17 @@ def derive(corpus, today: date | None = None) -> tuple[list, list]:
                 withheld_c.gate("current-policy", False, "these calls predate the mode's clearance, "
                                                          "or fall on its (hour-less) clearance day")
                 withheld.append(withheld_c)
+    for (mode, model), n in pre_retirement.most_common():
+        if n >= MIN_CALLS:
+            r = Candidate(
+                kind="route", key=f"preretirement|{mode}|{model}",
+                title=f"`{mode}` ran {n:,} requests on `{model}` before the mode was retired",
+                claim="the mode was in force when these ran; the allowlist keeps no record of which model it "
+                      "cleared then, so this is history, not unapproved traffic.",
+                tier="history", sources=["openrouter"], numbers={"calls": n})
+            r.gate("current-policy", False, "these calls predate the mode's retirement, "
+                                            "or fall on its (hour-less) retirement day")
+            withheld.append(r)
     for (mode, model), n in bench.most_common():
         if n >= MIN_CALLS:
             b = Candidate(kind="route", key=f"bench|{mode}|{model}",
@@ -286,17 +389,18 @@ def derive(corpus, today: date | None = None) -> tuple[list, list]:
 
 
 def traffic_table(corpus) -> list[dict]:
-    """Every (mode, model) pair with its approval status — the ep04 table."""
-    modes = (corpus.route_policy or {}).get("modes", {})
+    """Every (mode, model, status) with its traffic — the ep04 table. Status is judged per
+    call against the policy in force when it ran (`call_status`), so one pair can have a
+    pre-clearance row and an approved row."""
+    policy = corpus.route_policy or {}
+    modes = policy.get("modes", {})
     pairs = defaultdict(list)
     for e in corpus.events:
         if e.kind == "model":
-            pairs[(e.surface, e.model)].append(e)
+            pairs[(e.surface, e.model, call_status(e, policy))].append(e)
     rows = []
-    for (mode, model), evs in sorted(pairs.items(), key=lambda kv: -len(kv[1])):
+    for (mode, model, status), evs in sorted(pairs.items(), key=lambda kv: -len(kv[1])):
         st = pair_stats(evs)
-        ap = modes.get(mode, {}).get("model")
-        status = "approved" if _model_eq(model, ap) else ("drift" if ap else "unapproved")
         rows.append({"mode": mode, "model": model, "status": status, **{k: st[k] for k in
                      ("calls", "ok_rate", "usd", "usd_per_ok", "p50_ms")}})
     for mode, spec in modes.items():

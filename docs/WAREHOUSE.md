@@ -4,13 +4,26 @@ You don't need a warehouse: `runtune record claude|codex|cursor` and the hook wr
 If you already store agent telemetry in Postgres, point `--db` (or `$RUNTUNE_DB_URL`) at it
 and RunTune reads these tables in a read-only session. Give it a SELECT-only role.
 
+A table or column a source needs and the warehouse lacks turns that source into a coverage
+note and a warning; the other sources still load. `agent_invocations` is optional, and so is
+its `token_source` column (an older cc-logger has neither): the tool-call evidence is read
+either way, and the report says that sub-agent token figures were not used.
+
 ## Claude Code (cc-logger schema, as recorded by CallusGuard's recorder)
 
 | table | columns read |
 |---|---|
 | `tool_calls` | tool_call_id, session_id, invocation_id, tool_name, subagent_type, tool_input (jsonb: command/skill/url/file_path), status (`success`/`failure`/`pending`/`orphaned`), error, duration_ms, started_at, received_at |
 | `sessions` | session_id, model |
-| `agent_invocations` | invocation_id, session_id, agent_type, model, status, started_at, ended_at, output_tokens, cache_read_tokens, token_source (only `transcript-verified` rows' tokens are used) |
+| `agent_invocations` | invocation_id, session_id, agent_type, model, status, started_at, ended_at, output_tokens, cache_read_tokens, token_source (only `transcript-verified` rows' tokens are used); optional: description, prompt_received, spawned_by_tool_call_id, workflow_run_id, workflow_phase, last_message (length only), source |
+| `workflow_runs` (optional) | run_id, session_id, workflow_name, status, started_at, recorded_at, duration_ms, agent_count, total_tokens |
+| `vw_peer_messages` (optional) | msg_id, at, sender_session_id, sender_inferred, sender_name, receiver_session_id, addressed_to, delivery, notify_when_idle, body, summary, body_chars |
+
+The three optional parts are cc-logger's migrations 005 and 006 (2026-10-13). With them, a
+fan-out is named by what its agents were asked to do and grouped by Workflow run, and
+cross-session messages feed the coordination findings. Without them, each is a coverage note.
+`SendMessage`, `ListAgents` and `Workflow` count as captured tools only when the table that
+records them exists, so an older logger never reports them as unused.
 
 ## Codex (codex-logger schema)
 
