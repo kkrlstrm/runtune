@@ -32,7 +32,7 @@ def _inv(n, agent_type="workflow-subagent", run=None, wf=None, phase=None, desc=
                       workflow_run=run, workflow_name=wf, workflow_phase=phase, prompt=prompt)
 
 
-def _msg(n, at, sender, receiver, first="Deployed abc1234 to gtm-app", body=None, idle=False):
+def _msg(n, at, sender, receiver, first="Deployed abc1234 to web-app", body=None, idle=False):
     return Message(source="claude", msg_id=f"m{n}", at=at, sender=sender, receiver=receiver,
                    first_line=first, body=body if body is not None else first, body_chars=len(body or first),
                    notify_when_idle=idle)
@@ -40,10 +40,10 @@ def _msg(n, at, sender, receiver, first="Deployed abc1234 to gtm-app", body=None
 
 class TaskNames(unittest.TestCase):
     def test_a_workflow_agent_is_named_by_workflow_and_phase(self):
-        self.assertEqual(_inv(1, wf="market-fanout", phase="Verify", desc="verify:HEED").task, "market-fanout/verify")
+        self.assertEqual(_inv(1, wf="market-fanout", phase="Verify", desc="verify:ITEM1").task, "market-fanout/verify")
 
     def test_without_a_phase_the_label_prefix_names_the_step(self):
-        self.assertEqual(_inv(1, wf="market-fanout", desc="research:NASFAA").task, "market-fanout/research")
+        self.assertEqual(_inv(1, wf="market-fanout", desc="research:ITEM2").task, "market-fanout/research")
 
     def test_an_agent_call_is_named_by_its_description(self):
         self.assertEqual(_inv(1, agent_type="general-purpose", desc="verify:Example ISD").task, "verify")
@@ -88,7 +88,7 @@ class WarehouseReader(unittest.TestCase):
             "FROM tool_calls": [],
             "FROM agent_invocations": [{"invocation_id": "a1", "session_id": "s1", "agent_type": "web-researcher",
                                         "status": "completed", "started_at": T0, "ended_at": T0,
-                                        "token_source": None, "description": "verify:HEED",
+                                        "token_source": None, "description": "verify:ITEM1",
                                         "prompt": "Verify the stat. key sk-abcdefghijklmnopqrstuvwxyz123456",
                                         "parent_call": None, "workflow_run_id": "wf_1", "result_chars": 900,
                                         "workflow_phase": "Research",
@@ -97,10 +97,10 @@ class WarehouseReader(unittest.TestCase):
                                     "status": "completed", "started_at": T0, "duration_ms": 1000,
                                     "agent_count": 10, "total_tokens": 5000}],
             "FROM vw_peer_messages": [{"msg_id": "m1", "at": T0, "sender_session_id": "s1",
-                                       "sender_inferred": False, "sender_name": "session-7e",
-                                       "receiver_session_id": "s2", "addressed_to": "session-3b",
+                                       "sender_inferred": False, "sender_name": "session-a",
+                                       "receiver_session_id": "s2", "addressed_to": "session-b",
                                        "delivery": "mid_turn", "notify_when_idle": False,
-                                       "body": "\nShipped 2bf57fe on main\nNo reply needed.", "body_chars": 40}],
+                                       "body": "\nShipped 1a2b3c4 on main\nNo reply needed.", "body_chars": 40}],
         }
 
     def test_newer_logger_gives_provenance_runs_and_messages(self):
@@ -111,7 +111,7 @@ class WarehouseReader(unittest.TestCase):
         self.assertEqual(inv.task, "market-fanout/research")            # the recorded phase beats the label
         self.assertTrue(inv.recovered)
         self.assertNotIn("sk-abcdefghij", inv.prompt)                     # redacted on the way in
-        self.assertEqual(c.messages[0].first_line, "Shipped 2bf57fe on main")
+        self.assertEqual(c.messages[0].first_line, "Shipped 1a2b3c4 on main")
         self.assertTrue(c.messages[0].matched)
         self.assertTrue({"Workflow", "SendMessage", "ListAgents"} <= c.capture_allowlist["claude"])
 
@@ -146,7 +146,7 @@ class TranscriptRecorder(unittest.TestCase):
             {"type": "assistant", "sessionId": "S", "timestamp": "2026-10-13T10:00:00Z",
              "message": {"model": "m", "content": [
                  {"type": "tool_use", "id": "t1", "name": "SendMessage",
-                  "input": {"to": "session-3b", "message": "Deployed aa628c9 to chat-agent\nNo reply needed."}},
+                  "input": {"to": "session-b", "message": "Deployed 9f8e7d6 to chat-agent\nNo reply needed."}},
                  {"type": "tool_use", "id": "t2", "name": "SendMessage",
                   "input": {"to": "subagent-x", "message": "keep going"}}]}},
             {"type": "user", "sessionId": "S", "timestamp": "2026-10-13T10:00:01Z",
@@ -161,8 +161,8 @@ class TranscriptRecorder(unittest.TestCase):
         return [
             {"type": "attachment", "sessionId": "R", "timestamp": "2026-10-13T10:00:02Z",
              "attachment": {"type": "queued_command", "origin": {
-                 "kind": "peer", "msg_id": "M1", "from": "uds:/tmp/cc-socks/1.sock", "name": "kai-76",
-                 "body": "Deployed aa628c9 to chat-agent\nNo reply needed."}}},
+                 "kind": "peer", "msg_id": "M1", "from": "uds:/tmp/cc-socks/1.sock", "name": "session-c",
+                 "body": "Deployed 9f8e7d6 to chat-agent\nNo reply needed."}}},
             {"type": "user", "isMeta": True, "sessionId": "R", "timestamp": "2026-10-13T10:05:00Z",
              "origin": {"kind": "peer", "handback": True, "msg_id": "H1", "body": "sub-agent report"}},
         ]
@@ -177,7 +177,7 @@ class TranscriptRecorder(unittest.TestCase):
         self.assertEqual([m.msg_id for m in c.messages], ["M1"])
         m = c.messages[0]
         self.assertEqual((m.sender, m.receiver, m.delivery), ("S", "R", "mid_turn"))
-        self.assertEqual(m.first_line, "Deployed aa628c9 to chat-agent")
+        self.assertEqual(m.first_line, "Deployed 9f8e7d6 to chat-agent")
 
     def test_a_subagent_carries_its_task_and_its_workflow_run(self):
         from runtune.record import claude as rec
@@ -185,7 +185,7 @@ class TranscriptRecorder(unittest.TestCase):
         sub = os.path.join(self.proj, "S", "subagents", "workflows", "wf_9", "agent-x1.jsonl")
         _write_jsonl(sub, [
             {"type": "user", "sessionId": "S", "agentId": "x1", "timestamp": "2026-10-13T10:00:00Z",
-             "message": {"content": "[Workflow harness] Verify the HEED stat"}},
+             "message": {"content": "[Workflow harness] Verify the ITEM1 stat"}},
             {"type": "assistant", "sessionId": "S", "agentId": "x1", "timestamp": "2026-10-13T10:00:05Z",
              "message": {"model": "haiku", "usage": {"output_tokens": 10, "cache_read_input_tokens": 100},
                          "content": [{"type": "tool_use", "id": "b1", "name": "Bash", "input": {"command": "ls"}}]}},
@@ -193,7 +193,7 @@ class TranscriptRecorder(unittest.TestCase):
              "message": {"content": [{"type": "tool_result", "tool_use_id": "b1", "content": "a"}]}},
         ])
         with open(sub[:-len(".jsonl")] + ".meta.json", "w") as f:
-            json.dump({"agentType": "web-researcher", "description": "verify:HEED", "workflowPhase": "Verify"}, f)
+            json.dump({"agentType": "web-researcher", "description": "verify:ITEM1", "workflowPhase": "Verify"}, f)
         os.makedirs(os.path.join(self.proj, "S", "workflows"), exist_ok=True)
         with open(os.path.join(self.proj, "S", "workflows", "wf_9.json"), "w") as f:
             json.dump({"runId": "wf_9", "workflowName": "market-fanout", "status": "completed",
@@ -204,7 +204,7 @@ class TranscriptRecorder(unittest.TestCase):
         self.assertEqual(inv.workflow_run, "wf_9")
         self.assertEqual(inv.workflow_name, "market-fanout")              # joined from the run record
         self.assertEqual(inv.task, "market-fanout/verify")
-        self.assertIn("Verify the HEED stat", inv.prompt)
+        self.assertIn("Verify the ITEM1 stat", inv.prompt)
         self.assertEqual([(w.run_id, w.agents_declared) for w in c.workflow_runs], [("wf_9", 2)])
 
     def test_a_growing_subagent_transcript_loses_no_event(self):
@@ -240,9 +240,9 @@ class MessageJoin(unittest.TestCase):
     def test_non_empty_fields_win_and_earliest_time_wins(self):
         a = Message(source="claude", msg_id="m", at=T0 + timedelta(seconds=5), sender=None, receiver="R",
                     delivery="new_turn", first_line="x")
-        b = Message(source="claude", msg_id="m", at=T0, sender="S", receiver=None, addressed_to="session-3b")
+        b = Message(source="claude", msg_id="m", at=T0, sender="S", receiver=None, addressed_to="session-b")
         [m] = merge_messages([a, b])
-        self.assertEqual((m.sender, m.receiver, m.addressed_to, m.delivery, m.at), ("S", "R", "session-3b",
+        self.assertEqual((m.sender, m.receiver, m.addressed_to, m.delivery, m.at), ("S", "R", "session-b",
                                                                                      "new_turn", T0))
 
 
@@ -304,15 +304,15 @@ class Coordination(unittest.TestCase):
             c.events.append(fx.ev(session=f"b{i}", day=day, minute=90, text="cd deploy/x && fly deploy -a chat-agent"))
             if i < messaged:
                 c.messages.append(_msg(i, T0 + timedelta(days=day, minutes=30), f"b{i}", f"a{i}"))
-        c.events.append(fx.ev(session="z", day=0, minute=1, surface="SendMessage", text="session-3b"))
+        c.events.append(fx.ev(session="z", day=0, minute=1, surface="SendMessage", text="session-b"))
         return c.finalize()
 
     def test_deploy_targets(self):
         cases = {"fly deploy -a chat-agent": "chat-agent",
                  "cd deploy/social-fly && fly deploy": "social-fly",
-                 "python3 scripts/fly-fleet.py deploy ops-app": "ops-app",
+                 "python3 scripts/deploy-tool.py deploy ops-app": "ops-app",
                  "fly deploy --config deploy/case-worker/fly.draft.toml": "case-worker",
-                 "python3 scripts/fly-fleet.py deploy --stale": None,
+                 "python3 scripts/deploy-tool.py deploy --stale": None,
                  "fly deploy --help": None, "fly status -a chat-agent": None}
         for text, want in cases.items():
             with self.subTest(text=text):
@@ -360,9 +360,9 @@ class Coordination(unittest.TestCase):
     def test_message_form_is_judged_per_rule(self):
         c = Corpus()
         for i in range(20):
-            first = "Deployed aa628c9 to gtm-app" if i < 15 else "hey, quick thing"
+            first = "Deployed 9f8e7d6 to web-app" if i < 15 else "hey, quick thing"
             c.messages.append(_msg(i, T0, f"s{i}", "r", first=first,
-                                   body=first + ("\nFrom session session-7e on feat/x. No reply needed." if i < 5 else "")))
+                                   body=first + ("\nFrom session session-a on feat/x. No reply needed." if i < 5 else "")))
         c = c.finalize()
         got, held = coordination.derive(c)
         f = [x for x in got if x.key == "message-form"][0]
