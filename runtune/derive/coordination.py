@@ -44,9 +44,10 @@ POLL_CALLS, POLL_SPAN = 3, timedelta(minutes=30)
 MIN_POLL_SESSIONS = 3
 LEAD = timedelta(hours=1)  # a message up to an hour before the first action still counts
 
-_DEPLOY = re.compile(r"\bfly(?:ctl)?\s+deploy\b|\bfly-fleet\.py\s+deploy\b")
+# `fly deploy`, or a project's own wrapper script with a `deploy <app>` subcommand.
+_DEPLOY = re.compile(r"\bfly(?:ctl)?\s+deploy\b|\S+\.(?:py|sh)\s+deploy\b")
 _APP = [re.compile(r"(?:^|\s)(?:-a|--app)[\s=]+([A-Za-z0-9][\w-]+)"),
-        re.compile(r"fly-fleet\.py\s+deploy\s+([A-Za-z0-9][\w-]+)"),
+        re.compile(r"\S+\.(?:py|sh)\s+deploy\s+([A-Za-z0-9][\w-]+)"),
         re.compile(r"--config\s+\S*?deploy/([\w-]+)/fly[\w.-]*\.toml"),
         re.compile(r"\bcd\s+\S*?deploy/([\w-]+)\b")]
 _SCRATCH = ("/tmp/", "/private/tmp/", "/var/folders/")

@@ -75,7 +75,7 @@ warehouse.
   were logged, and messages recorded at only one end.
 - **model-eval-gate sees sub-agent work by task.** Each invocation becomes one work row
   named by its task, so a sub-agent job repeated across runs is a delegation class
-  (`web-researcher [market-landscape-fanout/verify]`).
+  (`researcher [fanout/verify]`).
 - **Fix: the transcript recorder lost an event when a sub-agent transcript grew** between
   reads. It counted the agent's summary record as an event when slicing what was new.
 
@@ -108,7 +108,7 @@ on both sides:
   default `subscription`). model-eval-gate reads RunTune's evidence
   (`meg observe ingest --from-runtune`) and keeps the same redacted text.
 
-Four fixes from the first run over a team's telemetry (four engineers, 30 days). Each is
+Four fixes from the first run over a team's telemetry. Each is
 tested over its class in `tests/test_pilot_defects.py`.
 
 - **A missing table or column is a coverage note, for every source.** An older cc-logger has
