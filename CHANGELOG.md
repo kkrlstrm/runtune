@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+**Sub-agents, workflow runs and cross-session messages are evidence.** cc-logger now
+records what each sub-agent was asked to do, every Workflow run, and both ends of each
+message one Claude Code session sends another. RunTune reads all three from the warehouse,
+and `runtune record claude` reads them from Claude Code's own files, so nothing needs a
+warehouse.
+
+- **Sub-agent findings name the task.** An invocation carries its description, prompt
+  (redacted), exact parent call and workflow run. A fan-out is one Workflow run when there
+  is one, and the finding says which workflows run their agents as the generic type, names
+  the drafted type after the task, and says where to pass it (`agentType`). Without the new
+  columns it groups by toolset, as before, and says so.
+- **Coordination is a finding kind.** Two sessions deploying the same app or editing the
+  same file inside a window, with no message between them, counted only from the day
+  messaging first appears in the evidence; messages measured against the rules a reader
+  needs (a checkable first line, who is sending, whether a reply is needed); sessions that
+  poll their peers instead of asking for an idle notice. No artifact: approving one records
+  it as done by hand, and `stage` refuses it.
+- **Coverage says what the recorder missed:** workflow runs that declared more agents than
+  were logged, and messages recorded at only one end.
+- **model-eval-gate sees sub-agent work by task.** Each invocation becomes one work row
+  named by its task, so a sub-agent job repeated across runs is a delegation class
+  (`web-researcher [market-landscape-fanout/verify]`).
+- **Fix: the transcript recorder lost an event when a sub-agent transcript grew** between
+  reads. It counted the agent's summary record as an event when slicing what was new.
+
 **model-eval-gate is RunTune's route engine.** Four connections, each with a contract test
 on both sides:
 

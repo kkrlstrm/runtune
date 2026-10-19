@@ -32,11 +32,12 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 
+from ..derive.candidate import NO_ARTIFACT_KINDS
 from ..lifecycle import ledger, promoter
 
 SNOOZE_DAYS = 28
 MAX_ITEMS = 8
-KIND_ORDER = {"route": 0, "environment": 1, "constraint": 2, "capability": 3, "subagent": 4}
+KIND_ORDER = {"route": 0, "environment": 1, "constraint": 2, "capability": 3, "subagent": 4, "coordination": 5}
 _VOLUME_KEYS = ("fails", "events", "agents", "calls", "unlogged_requests", "billed_outside_router", "invocations")
 
 _ALLOWED = {"all", "none", "no", "except", "but", "and", "approve", "apply", "yes", "ok", "okay",
@@ -135,7 +136,7 @@ def _meta(c) -> str:
     elif "eval" in c.get("requires", []):
         bits.append("eval required")
     if not c.get("proposal"):
-        what = "a fix on the machine" if c["kind"] == "environment" else "a code fix"
+        what = NO_ARTIFACT_KINDS.get(c["kind"], "a code fix")
         bits.append(f"{what}, not an artifact — approving files it as done-by-hand")
     bits.append(" · ".join(c.get("sources", [])))
     return " · ".join(b for b in bits if b)
@@ -236,7 +237,7 @@ def act(ws, state: dict, reply: str, approver: str, target_root: str) -> dict:
             continue
         cand = ws.find_candidate(it["id"]) or {}
         if not cand.get("proposal"):
-            what = "a fix on the machine" if cand.get("kind") == "environment" else "a code change"
+            what = NO_ARTIFACT_KINDS.get(cand.get("kind"), "a code change")
             ledger.append(ws.ledger_path, {"action": "acknowledge", "id": it["id"], "by": approver,
                                            "digest": state["digest_id"], "note": f"{what}, tracked by hand"})
             refused.append((it["n"], f"no artifact to apply — recorded as acknowledged; the fix is {what}"))

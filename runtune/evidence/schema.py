@@ -1,7 +1,7 @@
 """One evidence stream, five producers.
 
 Claude Code, Codex, Cursor, Antigravity and OpenRouter record different things in different shapes.
-RunTune reduces all of them to two record types so every deriver and every
+RunTune reduces all of them to four record types so every deriver and every
 measurement runs on the same footing:
 
     Event        one settled ATTEMPT at something — a tool call, a shell command,
@@ -11,6 +11,10 @@ measurement runs on the same footing:
 
     Invocation   one agent's life — a sub-agent, a Codex thread, a root session.
                  The unit the skilled-subagent deriver reasons over.
+
+    Message      one cross-session message: one session telling another what changed.
+
+    WorkflowRun  one Workflow fan-out run, as the harness recorded it.
 
 and one record of what the evidence could NOT see (`Coverage`), because a
 derivation run over a window with a two-week hole in it must say so.
@@ -66,6 +70,73 @@ class Invocation:
     token_verified: bool = False
     tools: Counter = field(default_factory=Counter)
     failures: int = 0
+    # What the agent was asked to do. A hook payload carries none of it; it comes from the
+    # agent's own transcript and the `.meta.json` Claude Code writes beside it.
+    description: str | None = None   # the Agent call's description, or a workflow agent's label
+    prompt: str | None = None        # the task it was given: redacted, truncated
+    parent_call: str | None = None   # the parent's Agent tool_use id: an exact link, not a type match
+    workflow_run: str | None = None  # wf_* run id when a Workflow spawned it
+    workflow_name: str | None = None
+    workflow_phase: str | None = None
+    result_chars: int | None = None  # length of what it returned; None = not recorded
+    recovered: bool = False          # rebuilt from disk after the live recorder missed it
+
+    @property
+    def task(self) -> str | None:
+        """A stable name for the job, so agents doing the same work group together.
+
+        A workflow agent is named by its workflow and phase; an Agent-tool agent by its
+        description, with a `verify:<item>`-style label reduced to its prefix, because the
+        part after the colon names the item, not the job."""
+        label = (self.description or "").strip()
+        head = label.split(":", 1)[0].strip().lower() if ":" in label else ""
+        if self.workflow_name:
+            step = (self.workflow_phase or head or "").strip().lower()
+            return f"{self.workflow_name}/{step}" if step else self.workflow_name
+        if head:
+            return head
+        return label.lower()[:60] or None
+
+
+@dataclass(slots=True)
+class Message:
+    """One cross-session message: a Claude Code session telling another what changed.
+
+    The sending half is a SendMessage tool call; the receiving half fires no hook and
+    exists only in the receiver's transcript. Both ends share Claude Code's msg_id, so
+    `matched` means both transcripts were read."""
+    source: str
+    msg_id: str
+    at: datetime
+    sender: str | None              # session id
+    receiver: str | None            # session id
+    addressed_to: str | None = None
+    sender_name: str | None = None
+    first_line: str = ""            # redacted: what the receiving user sees in the preview
+    body: str = ""                  # redacted, truncated
+    body_chars: int = 0
+    delivery: str | None = None     # new_turn | mid_turn | None (receipt not recorded)
+    notify_when_idle: bool = False
+    send_result: str | None = None
+    sender_inferred: bool = False   # sender resolved from the inbox-socket table, not the msg_id join
+
+    @property
+    def matched(self) -> bool:
+        return bool(self.sender and self.receiver)
+
+
+@dataclass(slots=True)
+class WorkflowRun:
+    """One Workflow tool run. The tool returns at launch; the run's record lands later."""
+    source: str
+    run_id: str
+    session: str
+    name: str | None
+    status: str | None
+    started: datetime | None
+    duration_ms: int | None = None
+    agents_declared: int | None = None
+    tokens_declared: int | None = None
 
 
 @dataclass
@@ -120,6 +191,8 @@ class Corpus:
     spend: list = field(default_factory=list)  # OpenRouter daily activity rows
     # source -> the only tools that recorder captures (absent = it sees everything)
     capture_allowlist: dict = field(default_factory=dict)
+    messages: list = field(default_factory=list)       # cross-session messages (Message)
+    workflow_runs: list = field(default_factory=list)  # WorkflowRun
 
     def extend(self, other: "Corpus") -> "Corpus":
         self.events.extend(other.events)
@@ -131,6 +204,8 @@ class Corpus:
             self.regression = other.regression
         self.spend.extend(other.spend)
         self.capture_allowlist.update(other.capture_allowlist)
+        self.messages.extend(other.messages)
+        self.workflow_runs.extend(other.workflow_runs)
         return self
 
     def by(self, key) -> dict:
@@ -143,7 +218,13 @@ class Corpus:
         return sorted({e.source for e in self.events} | set(self.coverage))
 
     def finalize(self) -> "Corpus":
-        """Fill coverage gaps from the events themselves."""
+        """Fill coverage gaps from the events themselves, and join what was recorded in pieces."""
+        self.messages = merge_messages(self.messages)
+        self.workflow_runs = list({(w.source, w.run_id): w for w in self.workflow_runs}.values())
+        names = {(w.source, w.run_id): w.name for w in self.workflow_runs}
+        for i in self.invocations:
+            if i.workflow_run and not i.workflow_name:
+                i.workflow_name = names.get((i.source, i.workflow_run))
         per = defaultdict(set)
         for e in self.events:
             per[e.source].add(e.ts.date())
@@ -155,3 +236,25 @@ class Corpus:
             cov.last = max(e.ts for e in evs)
             cov.gaps = find_gaps(days)
         return self
+
+
+def merge_messages(messages: list) -> list:
+    """One Message per msg_id. A transcript recorder sees each message twice, once from
+    each end; the sender's record carries the sender and what it addressed, the receiver's
+    carries the receiver and how it was delivered. Non-empty fields win, earliest time wins."""
+    out: dict = {}
+    for m in messages:
+        k = (m.source, m.msg_id)
+        if k not in out:
+            out[k] = m
+            continue
+        a = out[k]
+        for f in ("sender", "receiver", "addressed_to", "sender_name", "delivery", "send_result"):
+            if not getattr(a, f) and getattr(m, f):
+                setattr(a, f, getattr(m, f))
+        if not a.first_line and m.first_line:
+            a.first_line, a.body, a.body_chars = m.first_line, m.body, m.body_chars
+        a.notify_when_idle = a.notify_when_idle or m.notify_when_idle
+        if m.at and (a.at is None or m.at < a.at):
+            a.at = m.at
+    return list(out.values())

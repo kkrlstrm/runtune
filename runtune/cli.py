@@ -35,7 +35,7 @@ import time
 from datetime import datetime, timezone
 
 from . import measure, report, sources
-from .derive import capabilities, constraints, delegation, routes, subagents
+from .derive import capabilities, constraints, coordination, delegation, routes, subagents
 from .lifecycle import ledger, promoter, review
 from .lifecycle.store import Workspace
 
@@ -94,7 +94,7 @@ def cmd_derive(a):
     cands, held = [], []
     for fn in (lambda: constraints.derive(c), lambda: capabilities.derive_inline(c),
                lambda: capabilities.derive_procedures(c), lambda: subagents.derive(c, a.agents_dir),
-               lambda: routes.derive(c), lambda: delegation.derive(c)):
+               lambda: routes.derive(c), lambda: delegation.derive(c), lambda: coordination.derive(c)):
         got, wh = fn()
         cands += got
         held += wh
@@ -324,7 +324,7 @@ def _run_for_digest(a, ws):
     cands, held = [], []
     for fn in (lambda: constraints.derive(c), lambda: capabilities.derive_inline(c),
                lambda: subagents.derive(c, getattr(a, "agents_dir", None)), lambda: routes.derive(c),
-               lambda: delegation.derive(c)):
+               lambda: delegation.derive(c), lambda: coordination.derive(c)):
         got, wh = fn()
         cands += got
         held += wh

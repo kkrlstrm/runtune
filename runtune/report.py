@@ -10,6 +10,7 @@ KIND_HEAD = {
     "capability": "Capabilities — success / reuse → \"do this again\"",
     "subagent": "Skilled subagents — isolated, repeated work → a purpose-built type",
     "route": "Routes — what was approved vs. what ran vs. what was billed",
+    "coordination": "Coordination — sessions acting on the same target → did they tell each other",
 }
 
 

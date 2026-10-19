@@ -25,7 +25,11 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 
-KINDS = ("constraint", "capability", "subagent", "route")
+KINDS = ("constraint", "capability", "subagent", "route", "environment", "coordination")
+# Kinds with no artifact: a person makes the change, and approving one records it as done
+# by hand. The value is what the reviewer is told the change is.
+NO_ARTIFACT_KINDS = {"environment": "a fix on the machine",
+                     "coordination": "a change in how sessions coordinate"}
 TIGHTEN, WIDEN, NEUTRAL = "tighten", "widen", "neutral"
 
 
