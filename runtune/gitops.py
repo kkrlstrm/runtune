@@ -47,7 +47,21 @@ def remote_ref(root: str, branch: str) -> str | None:
     return out.split()[0] if out else None
 
 
-def publish(root: str, digest_id: str, body: str, guard_cfg: dict | None = None) -> str:
+def _kind_of(root: str, targets: dict):
+    """path -> the artifact kind whose target it lies under (authority.json `targets`)."""
+    roots = [(k, os.path.realpath(os.path.join(root, t))) for k, t in targets.items() if isinstance(t, str)]
+
+    def kind(path: str):
+        real = os.path.realpath(path)
+        for k, r in roots:
+            if real == r or real.startswith(r + os.sep):
+                return k
+        return None
+    return kind
+
+
+def publish(root: str, digest_id: str, body: str, guard_cfg: dict | None = None,
+            targets: dict | None = None) -> str:
     """Commit everything staged in `root` on runtune/<digest>, push it, open the PR.
 
     Idempotent: a branch `origin` already holds for this digest is the earlier run's publish,
@@ -64,7 +78,7 @@ def publish(root: str, digest_id: str, body: str, guard_cfg: dict | None = None)
     texts = staged_texts(root)
     texts["message"] = body
     try:
-        refusals = write_guard.Guard(guard_cfg, root).check(texts)
+        refusals = write_guard.Guard(guard_cfg, root).check(texts, kind_of=_kind_of(root, targets or {}))
     except FileNotFoundError as exc:
         refusals = [write_guard.Refusal("guard_config", "authority.json", str(exc))]
     if refusals:

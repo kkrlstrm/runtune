@@ -263,3 +263,29 @@ class Cli(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Narrowing(unittest.TestCase):
+    """A private harness may narrow case data to some kinds and allow it inside identifiers."""
+
+    def test_identifiers(self):
+        cases = [("acme", "clients.json")]
+        for text in ("see deploy/acme-worker/case.py", "psql $ACME_DB_URL", "acme.example.com", "@acme"):
+            with self.subTest(text):
+                self.assertIn("case_data", reasons(g.check_text("f", text, case_values=cases)))
+                self.assertEqual(g.check_text("f", text, case_values=cases, allow_identifiers=True), [])
+        self.assertIn("case_data", reasons(g.check_text("f", "run it for acme first", case_values=cases,
+                                                        allow_identifiers=True)))
+
+    def test_case_kinds(self):
+        with tempfile.TemporaryDirectory() as d:
+            open(os.path.join(d, "c.txt"), "w").write("Acme Learning\n")
+            guard = g.Guard({"case_values": [{"path": "c.txt"}], "case_kinds": ["capability"],
+                             "case_identifiers": "allow"}, d, secrets=[])
+            files = {"rules.json": "block psql for Acme Learning"}
+            self.assertEqual(guard.check(files, kind="constraint"), [])
+            self.assertTrue(guard.check(files, kind="capability"))
+            # The PR body is always checked.
+            self.assertTrue(guard.check({"message": "applied for Acme Learning"}, kind="constraint"))
+            # Secrets and shapes are checked in every kind.
+            self.assertTrue(guard.check({"rules.json": "ghp_" + "a" * 36}, kind="constraint"))

@@ -376,7 +376,8 @@ def _publish(a, digest_id, items, message):
         if art:
             art["pending_publish"] = digest_id
             ws.put(art)
-    url = gitops.publish(a.target_root, digest_id, message, ws.authority().get("guard"))
+    auth = ws.authority()
+    url = gitops.publish(a.target_root, digest_id, message, auth.get("guard"), auth.get("targets"))
     print(url)
     ref = gitops.remote_ref(a.target_root, gitops.branch_for(digest_id))
     for n, aid in items:

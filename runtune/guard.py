@@ -18,13 +18,23 @@ Configuration, in authority.json:
                       {"path": "case-values.txt"}],
       "ignore": ["mission"],
       "min_len": 4,
-      "secret_env": ["MY_ODD_NAME"]
+      "secret_env": ["MY_ODD_NAME"],
+      "case_kinds": ["capability", "subagent"],
+      "case_identifiers": "allow"
     }
 
 A `path` is resolved against the target root. A `.json` source yields every string found
 under the named `keys` at any depth (and every key of an object named by `keys: ["*key"]`);
 any other file yields one value per line. Secrets are the values of environment variables
 whose names look like credentials (KEY, TOKEN, SECRET, PASSWORD, DSN, ...) plus `secret_env`.
+
+The defaults are strict, for artifacts that travel (a team, a public repo): case data is
+checked in every kind and everywhere in the text. A private harness can narrow it:
+`case_kinds` lists the artifact kinds checked for case data (a guard rule about one client's
+database is specific on purpose), and `case_identifiers: "allow"` skips a value that is part of
+a path or identifier (`deploy/acme-worker/`, `ACME_DB_URL`). Secrets, shapes and invisible
+Unicode are checked in every kind regardless, and a pull-request body is always checked for
+case data.
 """
 
 from __future__ import annotations
@@ -145,7 +155,8 @@ def _id(value: str) -> str:
 
 
 def check_text(where: str, text: str, *, secrets: list[str] = (), case_values: list[tuple[str, str]] = (),
-               ignore: set[str] = frozenset(), min_len: int = 4) -> list[Refusal]:
+               ignore: set[str] = frozenset(), min_len: int = 4,
+               allow_identifiers: bool = False) -> list[Refusal]:
     refusals: list[Refusal] = []
     flat = re.sub(r"\s+", "", text)
     for s in secrets:
@@ -169,11 +180,24 @@ def check_text(where: str, text: str, *, secrets: list[str] = (), case_values: l
             continue
         # The value's words in order, any whitespace between them (a line break included), and
         # not inside a longer word: "spur" does not refuse "spurious".
-        rx = r"(?<!\w)" + r"\s+".join(re.escape(t) for t in tokens) + r"(?!\w)"
-        if re.search(rx, norm):
+        # Bounded by anything but a letter or digit: an underscore separates (`ACME_DB_URL`).
+        rx = r"(?<![^\W_])" + r"\s+".join(re.escape(t) for t in tokens) + r"(?![^\W_])"
+        hits = [m for m in re.finditer(rx, norm)
+                if not (allow_identifiers and _in_identifier(norm, m.start(), m.end()))]
+        if hits:
             seen.add(key)
             refusals.append(Refusal("case_data", where, f"a value from {label} (id {_id(value)})"))
     return refusals
+
+
+_IDENT = "/-_.$@:"
+
+
+def _in_identifier(text: str, start: int, end: int) -> bool:
+    """Is text[start:end] part of a path, env var, module or host name (touching / - _ . $ @ :)?"""
+    before = text[start - 1] if start > 0 else ""
+    after = text[end] if end < len(text) else ""
+    return (before and before in _IDENT) or (after and after in _IDENT)
 
 
 def _joiner_is_text(text: str, i: int) -> bool:
@@ -213,14 +237,23 @@ class Guard:
         self.case_values = load_case_values(cfg, target_root)
         self.ignore = {" ".join(_norm(x).split()) for x in cfg.get("ignore", [])}
         self.min_len = int(cfg.get("min_len", 4))
+        self.case_kinds = set(cfg["case_kinds"]) if cfg.get("case_kinds") is not None else None
+        self.allow_identifiers = cfg.get("case_identifiers", "refuse") == "allow"
 
-    def check(self, files: dict[str, str], allowed_roots: list[str] | None = None) -> list[Refusal]:
+    def check(self, files: dict[str, str], allowed_roots: list[str] | None = None,
+              kind: str | None = None, kind_of=None) -> list[Refusal]:
+        """`kind` is the artifact kind of every file; `kind_of(path)` names it per file when one
+        check covers several (a publish). The message (a PR body) is always checked for case data."""
         out: list[Refusal] = []
         for where, text in files.items():
             if allowed_roots is not None and where != "message":
                 out += check_path(where, allowed_roots)
-            out += check_text(where, text, secrets=self.secrets, case_values=self.case_values,
-                              ignore=self.ignore, min_len=self.min_len)
+            k = kind if kind is not None else (kind_of(where) if kind_of else None)
+            case = (where == "message" or self.case_kinds is None or k in self.case_kinds)
+            out += check_text(where, text, secrets=self.secrets,
+                              case_values=self.case_values if case else (),
+                              ignore=self.ignore, min_len=self.min_len,
+                              allow_identifiers=self.allow_identifiers and where != "message")
         return out
 
     def require(self, files: dict[str, str], allowed_roots: list[str] | None = None) -> None:
@@ -241,7 +274,8 @@ def artifact_texts(cand: dict, target: str) -> dict[str, str]:
             out[f"{target}#{key}"] = json.dumps(p[key], sort_keys=True, default=str)
     if p.get("script"):
         out[f"{target}#script"] = p["script"]
-    out["message"] = "\n".join(str(cand.get(k, "")) for k in ("title", "claim"))
+    # The title and claim are not written to the target (they go to the digest, which quotes
+    # evidence by design); the PR body is checked when it is published.
     return out
 
 

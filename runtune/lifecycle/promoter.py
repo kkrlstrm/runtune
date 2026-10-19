@@ -199,7 +199,7 @@ def _guard(ws, cand, target, target_root) -> None:
         g = write_guard.Guard(ws.authority().get("guard"), target_root)
     except FileNotFoundError as exc:
         raise Refused(f"write guard is not configured correctly: {exc}") from None
-    refusals = g.check(write_guard.artifact_texts(cand, target))
+    refusals = g.check(write_guard.artifact_texts(cand, target), kind=cand["kind"])
     if refusals:
         raise Refused("write guard: " + "; ".join(str(r) for r in refusals))
 
