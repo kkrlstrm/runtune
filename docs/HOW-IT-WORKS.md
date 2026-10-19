@@ -76,6 +76,11 @@ Withheld candidates are always reported with the gate that stopped them, so a re
    against the current target. Kinds listed in `require_verify` cannot be applied without one.
    See [VERIFY.md](VERIFY.md).
 
+8. **The write guard.** What the artifact would write is checked at stage and again at apply,
+   and a `--git` publish checks the staged diff and the PR body: no secret in any encoding, no
+   token shape, no invisible Unicode, no value from the host's case-data lists. See
+   `runtune/guard.py` and the `guard` block of authority.json.
+
 Every stage, verify, apply and retire goes into a hash-chained ledger (`runtune ledger`).
 
 ## 5. Measurement: three errors it guards against

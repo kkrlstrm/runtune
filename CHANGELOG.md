@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+**A write guard on everything RunTune writes.** Redaction already scrubbed what RunTune
+stores; nothing checked what it writes. `stage` and `apply` now check the artifact (skill,
+agent file, ruleset rule, grant, route, title and claim), and `inbox --git` checks the
+staged diff and the pull-request body before it commits or pushes. A hit refuses; nothing is
+redacted, because an artifact with a hole cut in it is not the one a person reviewed, and no
+refusal repeats the value it matched. It refuses:
+
+- a configured secret (environment variables named like credentials, plus `secret_env`) as
+  written, split over lines, as base64 or base64url at any of the three alignments, as hex,
+  and percent-encoded;
+- token shapes (AWS, Google, GitHub, GitLab, `sk-` keys, Slack, JWTs, private keys, a URL
+  with a password);
+- invisible Unicode (zero-width, bidirectional, tag, private-use, controls), except joiners
+  that are text: emoji sequences and letters of scripts that need them;
+- case data: values from the host's own lists (`guard.case_values` in authority.json, e.g.
+  client names from a registry file), matched as words across case, Unicode compatibility
+  forms and line breaks. A skill that names a client is about a case, not the work.
+
+A configured source that is missing refuses everything rather than checking nothing.
+`runtune guard <files>` runs the same check from a shell (exit 4 on a refusal). Adapted from
+@parcha/pi-agent-learn's guard (see docs/LINEAGE.md).
+
 **Sub-agents, workflow runs and cross-session messages are evidence.** cc-logger now
 records what each sub-agent was asked to do, every Workflow run, and both ends of each
 message one Claude Code session sends another. RunTune reads all three from the warehouse,

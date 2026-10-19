@@ -5,6 +5,10 @@ the machine. `runtune inbox --git` applies approved artifacts into a clone at
 --target-root, commits them on a branch, pushes, and opens a pull request. The merge is
 the final human approval, and `git revert` is the undo.
 
+Before anything is committed, the staged diff and the PR body go through the write guard
+(`runtune/guard.py`) with the clone's own authority config; a hit aborts the publish and
+leaves the clone on its base branch with nothing pushed.
+
 Needs: the clone's `origin` pointing at the repo, $RUNTUNE_GIT_TOKEN (a token that can
 push branches and open PRs) and $RUNTUNE_GIT_REPO (`owner/name`, GitHub).
 """
@@ -21,11 +25,35 @@ def _git(root: str, *args: str) -> str:
     return subprocess.run(["git", "-C", root, *args], check=True, capture_output=True, text=True).stdout.strip()
 
 
-def publish(root: str, digest_id: str, body: str) -> str:
+def staged_texts(root: str) -> dict[str, str]:
+    """{path: added text} for everything `git add -A` would commit."""
+    out = {}
+    names = _git(root, "diff", "--cached", "--name-only", "-z").split("\0")
+    for name in filter(None, names):
+        diff = subprocess.run(["git", "-C", root, "diff", "--cached", "--no-color", "-U0", "--", name],
+                              check=True, capture_output=True).stdout.decode("utf-8", "replace")
+        out[os.path.join(root, name)] = "\n".join(l[1:] for l in diff.splitlines()
+                                                 if l.startswith("+") and not l.startswith("+++"))
+    return out
+
+
+def publish(root: str, digest_id: str, body: str, guard_cfg: dict | None = None) -> str:
+    from . import guard as write_guard
     branch = f"runtune/{digest_id.lower()}"
     base = _git(root, "rev-parse", "--abbrev-ref", "HEAD")
     _git(root, "checkout", "-b", branch)
     _git(root, "add", "-A")
+    texts = staged_texts(root)
+    texts["message"] = body
+    try:
+        refusals = write_guard.Guard(guard_cfg, root).check(texts)
+    except FileNotFoundError as exc:
+        refusals = [write_guard.Refusal("guard_config", "authority.json", str(exc))]
+    if refusals:
+        _git(root, "reset", "-q")
+        _git(root, "checkout", "-q", base)
+        _git(root, "branch", "-D", branch)
+        raise write_guard.GuardRefused(refusals)
     _git(root, "-c", "user.name=runtune", "-c", "user.email=runtune@localhost", "commit", "-m",
          f"RunTune: apply approvals from digest {digest_id}\n\n{body}")
     _git(root, "push", "-u", "origin", branch)

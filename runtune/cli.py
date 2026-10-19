@@ -37,6 +37,7 @@ from datetime import datetime, timezone
 from . import measure, report, sources
 from .derive import capabilities, constraints, coordination, delegation, routes, subagents
 from .lifecycle import ledger, promoter, review
+from .guard import GuardRefused
 from .lifecycle.store import Workspace
 
 
@@ -358,7 +359,8 @@ def _approver(a):
 def _after_done(a, st, res):
     if getattr(a, "git", False) and res.get("applied"):
         from . import gitops
-        url = gitops.publish(a.target_root, st["digest_id"], res["message"])
+        url = gitops.publish(a.target_root, st["digest_id"], res["message"],
+                             Workspace(a.workspace).authority().get("guard"))
         print(url)
         # On a branch, not yet live: review must not measure a change nobody merged.
         ws = Workspace(a.workspace)
@@ -553,6 +555,27 @@ def cmd_demo(a):
     return 0
 
 
+def cmd_guard(a):
+    """Check files (or stdin) the way RunTune checks what it writes. Exit 4 on a refusal."""
+    from . import guard as write_guard
+    cfg = Workspace(a.workspace).authority().get("guard")
+    try:
+        g = write_guard.Guard(cfg, a.target_root)
+    except FileNotFoundError as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 3
+    files = {}
+    for path in a.files or ["-"]:
+        files[path if path != "-" else "message"] = (sys.stdin.read() if path == "-" else
+                                                      open(path, encoding="utf-8", errors="replace").read())
+    refusals = g.check(files)
+    for r in refusals:
+        print(f"REFUSED {r}", file=sys.stderr)
+    print(json.dumps({"checked": len(files), "case_values": len(g.case_values),
+                      "secrets": len(g.secrets), "refusals": [r.__dict__ for r in refusals]}))
+    return 4 if refusals else 0
+
+
 def cmd_ledger(a):
     ok, msg = ledger.verify(Workspace(a.workspace).ledger_path)
     print(msg)
@@ -667,6 +690,10 @@ def main(argv=None) -> int:
     sub.add_parser("demo", help="run the whole loop on a synthetic trace in a temp dir")
     p = sub.add_parser("ledger")
     p.add_argument("--workspace", default=".runtune")
+    p = sub.add_parser("guard", help="check files (or stdin) with the write guard; exit 4 on a refusal")
+    p.add_argument("files", nargs="*")
+    p.add_argument("--workspace", default=".runtune")
+    p.add_argument("--target-root", default=".")
     a = ap.parse_args(argv)
     if a.cmd == "measure" and not (a.match or (a.old and a.new)):
         ap.error("measure needs --match, or --old and --new")
@@ -675,6 +702,9 @@ def main(argv=None) -> int:
     except promoter.Refused as exc:
         print(f"REFUSED: {exc}", file=sys.stderr)
         return 3
+    except GuardRefused as exc:
+        print(f"REFUSED by the write guard: {exc}", file=sys.stderr)
+        return 4
 
 
 if __name__ == "__main__":
