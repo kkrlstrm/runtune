@@ -114,13 +114,13 @@ class WarehouseGaps(unittest.TestCase):
 
 class StatusAttribution(unittest.TestCase):
     """Defect 2: a compound command's failure was blamed on its FIRST command, so
-    `bison-report.py … | head; echo ===; …` produced a rule against a report that had
+    `campaign-report.py … | head; echo ===; …` produced a rule against a report that had
     worked, with its normal output filed as the error."""
 
     CASES = [
         # (command, the part whose exit status the call reports; None = cannot be told)
-        ("python3 scripts/bison-report.py campaigns x 2>&1 | head -60; echo ===; "
-         "python3 scripts/bison-report.py overview x 2>&1 | head -40", "head -40"),
+        ("python3 scripts/campaign-report.py campaigns x 2>&1 | head -60; echo ===; "
+         "python3 scripts/campaign-report.py overview x 2>&1 | head -40", "head -40"),
         ("cd /a && python3 scripts/gl.py cat k a.md; echo; python3 scripts/gl.py cat k b.md",
          "python3 scripts/gl.py cat k b.md"),
         ('cd "/a b" && python3 x.py --y', "python3 x.py --y"),
