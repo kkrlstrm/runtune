@@ -40,7 +40,7 @@ from .. import guard as write_guard
 from .. import verify
 from ..verify import route_eval
 from ..evidence import tiers
-from . import ledger
+from . import ledger, standing
 from .store import Workspace, file_digest
 from ..derive.candidate import NO_ARTIFACT_KINDS
 
@@ -158,6 +158,14 @@ def apply(ws: Workspace, aid: str, approver: str, action: str | None = None,
     else:
         raise Refused(f"unknown kind {kind}")
 
+    if kind in standing.KINDS and not _grant_revision(cand):
+        art["standing"] = "trial"
+    if art.get("revises"):
+        parent = ws.get(art["revises"])
+        if parent and parent.get("state") == "active" and parent.get("target") == art["target"]:
+            # The revision now owns the target; the parent is kept so a demotion can restore it.
+            parent.update(state="superseded", superseded_by=aid, superseded_at=_now())
+            ws.put(parent)
     art.update(state="active", applied_at=_now(),
                review_after=(datetime.now(timezone.utc) + timedelta(days=art.get("review_after_days", 28))).isoformat(), approver=approver, applied_reason=reason,
                applied_action=action, eval_ref=eval_ref, applied_digest=file_digest(art["target"]))
@@ -191,6 +199,43 @@ def retire(ws: Workspace, aid: str, approver: str, reason: str) -> dict:
     ledger.append(ws.ledger_path, {"action": "retire", "id": aid, "approver": approver, "reason": reason,
                                    "boundary_change": art["kind"] == "constraint"})
     return art
+
+
+# --------------------------------------------------------------------- demote
+def demote(ws: Workspace, aid: str, approver: str, reason: str) -> dict:
+    """Retire an artifact whose standing went bad and restore the one it revised, if any.
+    -> {"retired": aid, "restored": parent id or None}. A grant narrowing has no standing."""
+    art = ws.get(aid)
+    if not art or art["state"] != "active":
+        raise Refused(f"{aid} is not an active artifact")
+    if art["kind"] not in standing.KINDS or _grant_revision(art["candidate"]):
+        raise Refused(f"{aid} has no standing to demote; use `runtune retire`")
+    parent = ws.get(art["revises"]) if art.get("revises") else None
+    if parent and parent.get("state") == "superseded":
+        # Checked before anything moves: a parent the guard now refuses is not restored.
+        _guard(ws, parent["candidate"], parent["target"], parent.get("target_root", "."))
+    retire(ws, aid, approver, f"demoted: {reason}")
+    restored = None
+    if parent and parent.get("state") == "superseded":
+        prop = parent["candidate"]["proposal"]
+        if parent["kind"] == "capability":
+            _write_owned(parent["target"], "SKILL.md", prop["skill_md"], parent["id"])
+        elif prop.get("agent_md"):
+            _write_owned_file(parent["target"], prop["agent_md"], parent["id"])
+        parent.update(state="active", restored_at=_now(), restored_from=aid,
+                      applied_digest=file_digest(parent["target"]))
+        parent.pop("superseded_by", None)
+        ws.put(parent)
+        restored = parent["id"]
+    ledger.append(ws.ledger_path, {"action": "demote", "id": aid, "approver": approver, "reason": reason,
+                                   "restored": restored, "boundary_change": False})
+    return {"retired": aid, "restored": restored}
+
+
+def _grant_revision(cand) -> bool:
+    """A sub-agent proposal that narrows an existing, human-written agent's grant."""
+    p = cand.get("proposal") or {}
+    return cand.get("kind") == "subagent" and bool(p.get("revises")) and not p.get("agent_md")
 
 
 # -------------------------------------------------------------------- helpers
